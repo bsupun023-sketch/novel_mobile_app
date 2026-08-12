@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/services/api_service.dart';
+import 'chapter_reader_screen.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
@@ -177,6 +178,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           chapterNumber: chapterNumber,
                           chapterTitle: chapterTitle,
                           chapterContent: chapterContent,
+                          bookId: widget.storyId,
                         ),
                       ),
                     );
@@ -229,96 +231,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 );
               },
             ),
-    );
-  }
-}
-
-class ChapterReaderScreen extends StatelessWidget {
-  const ChapterReaderScreen({
-    super.key,
-    required this.apiService,
-    required this.title,
-    required this.author,
-    required this.coverPath,
-    required this.chapterNumber,
-    required this.chapterTitle,
-    required this.chapterContent,
-  });
-
-  final ApiService apiService;
-  final String title;
-  final String author;
-  final String coverPath;
-  final int chapterNumber;
-  final String chapterTitle;
-  final String chapterContent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Chapter $chapterNumber')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (coverPath.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.network(
-                apiService.resolveAssetUrl(coverPath),
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 220,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF667EEA), Color(0xFFFF6B9D)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.auto_stories_outlined,
-                      size: 64,
-                      color: Colors.white54,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (coverPath.isNotEmpty) const SizedBox(height: 20),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontFamily: 'serif',
-              fontSize: 28,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'by $author',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Chapter $chapterNumber: $chapterTitle',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            chapterContent.isEmpty
-                ? 'This chapter has not been written yet.'
-                : chapterContent,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.8),
-          ),
-        ],
-      ),
     );
   }
 }
