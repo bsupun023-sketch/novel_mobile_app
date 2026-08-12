@@ -8,7 +8,7 @@ class CreateStoryScreen extends StatefulWidget {
   const CreateStoryScreen({super.key, required this.apiService, this.story});
 
   final ApiService apiService;
-  final Map<String, dynamic>? story; // non-null when editing
+  final Map<String, dynamic>? story;
 
   @override
   State<CreateStoryScreen> createState() => _CreateStoryScreenState();
@@ -23,6 +23,9 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   bool _saving = false;
   String _coverPath = '';
+  final List<String> _selectedTags = [];
+  List<String> _availableTags = const [];
+  bool _loadingTags = false;
 
   bool get _isEditing => widget.story != null;
 
@@ -35,34 +38,60 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
       _authorController.text = widget.story!['author']?.toString() ?? '';
       _genreController.text = widget.story!['genre']?.toString() ?? '';
       _coverPath = widget.story!['cover_path']?.toString() ?? '';
-      _tagsController.text =
-          (widget.story!['tags'] as List<dynamic>?)
+      final existing = (widget.story!['tags'] as List<dynamic>?)
               ?.map((item) => item.toString())
-              .join(', ') ??
-          '';
+              .toList() ??
+          <String>[];
+      _selectedTags.addAll(existing.take(3));
+      _tagsController.text = _selectedTags.join(', ');
     }
+    _loadAvailableTags();
+  }
+
+  Future<void> _loadAvailableTags() async {
+    setState(() => _loadingTags = true);
+    try {
+      final items = await widget.apiService.fetchTags();
+      if (!mounted) return;
+      setState(() {
+        _availableTags = items
+            .map((e) => (e['name'] as String? ?? '').trim())
+            .where((n) => n.isNotEmpty)
+            .toList();
+        _loadingTags = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingTags = false);
+    }
+  }
+
+  void _toggleTag(String name) {
+    setState(() {
+      if (_selectedTags.contains(name)) {
+        _selectedTags.remove(name);
+      } else if (_selectedTags.length < 3) {
+        _selectedTags.add(name);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Maximum 3 hashtags per story')),
+        );
+        return;
+      }
+      _tagsController.text = _selectedTags.join(', ');
+    });
   }
 
   Future<void> _pickCover() async {
     final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
-    if (picked == null) {
-      return;
-    }
-
+    if (picked == null) return;
     final bytes = await picked.readAsBytes();
-    final payload = await widget.apiService.uploadWriterImage(
-      bytes,
-      picked.name,
-    );
+    final payload = await widget.apiService.uploadWriterImage(bytes, picked.name);
     final path = payload['path']?.toString() ?? '';
-    if (!mounted || path.isEmpty) {
-      return;
-    }
-
+    if (!mounted || path.isEmpty) return;
     setState(() => _coverPath = path);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Cover image uploaded')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cover image uploaded')),
+    );
   }
 
   @override
@@ -80,12 +109,11 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
     final summary = _summaryController.text.trim();
     final author = _authorController.text.trim();
     final genre = _genreController.text.trim();
-    final tagsText = _tagsController.text.trim();
 
     if (title.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter a title')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a title')),
+      );
       return;
     }
 
@@ -97,13 +125,7 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         'author': author.isEmpty ? 'Me' : author,
         'genre': genre.isEmpty ? 'Fiction' : genre,
         'cover_path': _coverPath,
-        'tags': tagsText.isEmpty
-            ? <String>[]
-            : tagsText
-                  .split(',')
-                  .map((tag) => tag.trim())
-                  .where((tag) => tag.isNotEmpty)
-                  .toList(),
+        'tags': List<String>.from(_selectedTags.take(3)),
       };
 
       if (_isEditing) {
@@ -115,14 +137,12 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         await widget.apiService.createWriterStory(payload);
       }
 
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving story: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -132,39 +152,22 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
         title: Text(_isEditing ? 'Edit Story' : 'Create Story'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Skip',
-              style: TextStyle(color: AppTheme.brand, fontSize: 15),
-            ),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cover image
             GestureDetector(
               onTap: _pickCover,
               child: Container(
-                width: 120,
-                height: 170,
+                height: 160,
+                width: double.infinity,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2979FF),
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(12),
                   image: _coverPath.isEmpty
                       ? null
                       : DecorationImage(
@@ -175,32 +178,27 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
                         ),
                 ),
                 child: _coverPath.isEmpty
-                    ? const Icon(
-                        Icons.book_rounded,
-                        color: Colors.white70,
-                        size: 48,
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add_photo_alternate_outlined, size: 40),
+                            SizedBox(height: 8),
+                            Text('Add cover image'),
+                          ],
+                        ),
                       )
                     : null,
               ),
             ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _pickCover,
-              child: const Text(
-                'Change Cover',
-                style: TextStyle(color: AppTheme.brand, fontSize: 14),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Title field
+            const SizedBox(height: 20),
             _LabeledField(
               label: 'TITLE',
               child: TextField(
                 controller: _titleController,
                 style: const TextStyle(fontSize: 15),
                 decoration: const InputDecoration(
-                  hintText: 'Enter title here',
+                  hintText: 'Story title',
                   hintStyle: TextStyle(color: AppTheme.muted),
                   border: InputBorder.none,
                 ),
@@ -208,15 +206,13 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
             ),
             const Divider(height: 1),
             const SizedBox(height: 20),
-
-            // Author field
             _LabeledField(
               label: 'AUTHOR',
               child: TextField(
                 controller: _authorController,
                 style: const TextStyle(fontSize: 15),
                 decoration: const InputDecoration(
-                  hintText: 'Your pen name',
+                  hintText: 'Author name',
                   hintStyle: TextStyle(color: AppTheme.muted),
                   border: InputBorder.none,
                 ),
@@ -224,8 +220,6 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
             ),
             const Divider(height: 1),
             const SizedBox(height: 20),
-
-            // Genre field
             _LabeledField(
               label: 'GENRE',
               child: TextField(
@@ -240,24 +234,59 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
             ),
             const Divider(height: 1),
             const SizedBox(height: 20),
-
-            // Tags field
             _LabeledField(
-              label: 'TAGS',
-              child: TextField(
-                controller: _tagsController,
-                style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  hintText: 'Comma-separated tags, e.g. romance, mystery',
-                  hintStyle: TextStyle(color: AppTheme.muted),
-                  border: InputBorder.none,
-                ),
+              label: 'HASHTAGS (max 3)',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_loadingTags)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (_selectedTags.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _selectedTags
+                          .map(
+                            (t) => InputChip(
+                              label: Text(t.startsWith('#') ? t : '#$t'),
+                              onDeleted: () => _toggleTag(t),
+                              backgroundColor: const Color(0xFFFFF0EE),
+                              labelStyle: const TextStyle(
+                                color: Color(0xFFE85D4C),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  const SizedBox(height: 8),
+                  if (_availableTags.isEmpty && !_loadingTags)
+                    const Text(
+                      'No hashtags available yet. Ask an admin to create some.',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 13),
+                    )
+                  else
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _availableTags
+                          .where((t) => !_selectedTags.contains(t))
+                          .map(
+                            (t) => ActionChip(
+                              label: Text(t.startsWith('#') ? t : '#$t'),
+                              onPressed: () => _toggleTag(t),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                ],
               ),
             ),
             const Divider(height: 1),
             const SizedBox(height: 20),
-
-            // Summary field
             _LabeledField(
               label: 'SUMMARY',
               child: ValueListenableBuilder<TextEditingValue>(
@@ -293,8 +322,6 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
             ),
             const Divider(height: 1),
             const SizedBox(height: 40),
-
-            // Save button
             SizedBox(
               width: double.infinity,
               child: FilledButton(
