@@ -31,6 +31,9 @@ DEFAULT_TAGS = [
     "SciFi",
     "Drama",
     "Humor",
+    "LGBTQ+",
+    "Boyxboy",
+    "Omegaverse",
 ]
 
 
@@ -44,6 +47,84 @@ def _query_count(connection, table: str) -> int:
         return 0
     finally:
         cursor.close()
+
+
+def _ensure_mysql_extra_tables(connection) -> int:
+    """Create tags / book_tags / reviews / follows if missing (MySQL)."""
+    from . import database as db_mod
+
+    if db_mod.USE_SQLITE:
+        return 0
+
+    cursor = connection.cursor()
+    added = 0
+    statements = [
+        (
+            "tags",
+            """
+            CREATE TABLE IF NOT EXISTS tags (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(80) NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+        ),
+        (
+            "book_tags",
+            """
+            CREATE TABLE IF NOT EXISTS book_tags (
+                book_id INT NOT NULL,
+                tag_id INT NOT NULL,
+                PRIMARY KEY (book_id, tag_id),
+                CONSTRAINT fk_bt_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+                CONSTRAINT fk_bt_tag FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+            """,
+        ),
+        (
+            "book_reviews",
+            """
+            CREATE TABLE IF NOT EXISTS book_reviews (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                book_id INT NOT NULL,
+                user_id INT NOT NULL,
+                rating TINYINT NOT NULL DEFAULT 5,
+                body TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_review_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+            )
+            """,
+        ),
+        (
+            "author_follows",
+            """
+            CREATE TABLE IF NOT EXISTS author_follows (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                author_user_id INT NOT NULL,
+                follower_user_id INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_follow (author_user_id, follower_user_id)
+            )
+            """,
+        ),
+    ]
+    try:
+        for name, sql in statements:
+            cursor.execute(f"SHOW TABLES LIKE '{name}'")
+            if cursor.fetchone() is None:
+                cursor.execute(sql)
+                added += 1
+                LOGGER.info("Created missing table: %s", name)
+        connection.commit()
+    except Exception as exc:
+        LOGGER.warning("ensure_mysql_extra_tables failed: %s", exc)
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+    finally:
+        cursor.close()
+    return added
 
 
 def _seed_tags(connection) -> int:
@@ -96,6 +177,10 @@ def _apply_runtime_patches() -> None:
 
         main_mod._set_story_tags = _set_story_tags  # type: ignore[attr-defined]
 
+        def _fetch_one(query: str, params=None):
+            rows = main_mod.fetch_all(query, params)
+            return rows[0] if rows else None
+
         try:
             from .tag_routes import register_extra_routes
 
@@ -103,7 +188,7 @@ def _apply_runtime_patches() -> None:
             register_extra_routes(
                 main_mod.app,
                 fetch_all=main_mod.fetch_all,
-                fetch_one=main_mod.fetch_one,
+                fetch_one=_fetch_one,
                 execute_write=main_mod.execute_write,
                 serialize_book=serialize,
             )
@@ -131,11 +216,11 @@ def run_startup_tasks() -> dict[str, Any]:
         "migrations": {},
         "counts": {},
         "tags_seeded": 0,
+        "tables_ensured": 0,
         "patches_applied": False,
         "db_mode": "sqlite" if USE_SQLITE else "mysql",
     }
 
-    # Ensure MySQL is reachable when configured; otherwise fall back to SQLite.
     try:
         from . import database as db_mod
         from . import db_runtime
@@ -154,13 +239,8 @@ def run_startup_tasks() -> dict[str, Any]:
     result["migrations"] = migration_report
 
     try:
-        _apply_runtime_patches()
-        result["patches_applied"] = True
-    except Exception as exc:
-        LOGGER.exception("Patch step failed: %s", exc)
-
-    try:
         conn = get_connection()
+        result["tables_ensured"] = _ensure_mysql_extra_tables(conn)
         result["tags_seeded"] = _seed_tags(conn)
         for tbl in (
             "menu_items",
@@ -169,11 +249,18 @@ def run_startup_tasks() -> dict[str, Any]:
             "profiles",
             "write_screen",
             "tags",
+            "books",
         ):
             result["counts"][tbl] = _query_count(conn, tbl)
         conn.close()
     except Exception as exc:
-        LOGGER.exception("Failed to query counts after migrations: %s", exc)
+        LOGGER.exception("Failed after migrations: %s", exc)
+
+    try:
+        _apply_runtime_patches()
+        result["patches_applied"] = True
+    except Exception as exc:
+        LOGGER.exception("Patch step failed: %s", exc)
 
     LOGGER.info("Startup tasks finished: %s", result)
     return result

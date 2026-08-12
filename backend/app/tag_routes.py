@@ -4,8 +4,16 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 
-def register_extra_routes(app, *, fetch_all, fetch_one, execute_write, serialize_book=None):
+def register_extra_routes(app, *, fetch_all, fetch_one=None, execute_write=None, serialize_book=None):
     """Attach tag-related routes onto an existing FastAPI app."""
+
+    def _fetch_one(query: str, params: tuple | None = None):
+        if fetch_one is not None:
+            return fetch_one(query, params)
+        rows = fetch_all(query, params)
+        if not rows:
+            return None
+        return rows[0]
 
     def _serialize(row):
         if serialize_book is not None:
@@ -47,9 +55,9 @@ def register_extra_routes(app, *, fetch_all, fetch_one, execute_write, serialize
         )
         return {"items": [_serialize(row) for row in rows], "tag": clean}
 
-    @app.get("/api/books/{book_id}")
+    @app.get("/api/books/{book_id}/public")
     def get_public_book(book_id: int):
-        row = fetch_one("SELECT * FROM books WHERE id=%s", (book_id,))
+        row = _fetch_one("SELECT * FROM books WHERE id=%s", (book_id,))
         if not row:
             raise HTTPException(status_code=404, detail="Book not found")
         book = _serialize(row)
@@ -62,10 +70,10 @@ def register_extra_routes(app, *, fetch_all, fetch_one, execute_write, serialize
             (book_id,),
         )
         tags = []
-        for tr in tag_rows:
-            if isinstance(tr, dict):
-                tags.append(tr.get("name") or "")
+        for tr_row in tag_rows:
+            if isinstance(tr_row, dict):
+                tags.append(tr_row.get("name") or "")
             else:
-                tags.append(tr[0] if tr else "")
+                tags.append(tr_row[0] if tr_row else "")
         book["tags"] = [t for t in tags if t]
         return book
