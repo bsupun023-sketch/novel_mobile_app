@@ -77,17 +77,12 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     final bookId = widget.bookId;
     if (bookId == null) return;
     try {
-      final lists = await widget.apiService.fetchReadingLists();
+      var lists = await widget.apiService.fetchReadingLists();
       if (!mounted) return;
       final choice = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
+        isScrollControlled: true,
         builder: (ctx) {
-          if (lists.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('No reading lists yet. Create one from Library.'),
-            );
-          }
           return SafeArea(
             child: ListView(
               shrinkWrap: true,
@@ -98,6 +93,17 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('Create new list'),
+                  onTap: () =>
+                      Navigator.pop(ctx, <String, dynamic>{'_create': true}),
+                ),
+                if (lists.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No lists yet — create one above.'),
+                  ),
                 ...lists.map((list) {
                   final name = list['name'] as String? ?? 'List';
                   return ListTile(
@@ -112,17 +118,80 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
         },
       );
       if (choice == null) return;
-      final listId = choice['id'] as int? ?? 0;
+
+      if (choice['_create'] == true) {
+        final nameCtrl = TextEditingController();
+        final name = await showDialog<String>(
+          context: context,
+          builder: (dCtx) => AlertDialog(
+            title: const Text('Create reading list'),
+            content: TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'List name'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dCtx, nameCtrl.text.trim()),
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+        );
+        if (name == null || name.isEmpty) return;
+        final created = await widget.apiService.createReadingList({
+          'name': name,
+          'story_count': 0,
+          'cover_path': '',
+          'sort_order': lists.length + 1,
+        });
+        var newId = (created['id'] as num?)?.toInt() ?? 0;
+        if (newId == 0) {
+          lists = await widget.apiService.fetchReadingLists();
+          for (final l in lists) {
+            if ((l['name'] as String?) == name) {
+              newId = (l['id'] as num?)?.toInt() ?? 0;
+              break;
+            }
+          }
+        }
+        if (newId != 0) {
+          await widget.apiService.addReadingListItem(newId, bookId);
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newId != 0
+                  ? 'Created "$name" and saved this story'
+                  : 'Created "$name". Open Library to confirm.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final listId = (choice['id'] as num?)?.toInt() ?? 0;
       if (listId == 0) return;
       await widget.apiService.addReadingListItem(listId, bookId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Saved to ${choice['name'] ?? 'list'}')),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save to reading list')),
+        SnackBar(
+          content: Text(
+            e.toString().contains('401') || e.toString().contains('403')
+                ? 'Please sign in to use reading lists'
+                : 'Could not save to reading list',
+          ),
+        ),
       );
     }
   }
