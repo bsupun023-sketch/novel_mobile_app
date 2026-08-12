@@ -70,98 +70,91 @@ Color _hexToColor(String hex) {
 class _ExploreStoriesSection extends StatelessWidget {
   const _ExploreStoriesSection({
     required this.books,
+    required this.topics,
     required this.apiService,
-    this.topics = const [],
-    this.onOpenExplore,
-    this.onReadMore,
+    required this.onOpenExplore,
   });
 
   final List<BookCardModel> books;
+  final List<ExploreTopicModel> topics;
   final ApiService apiService;
-  final List<dynamic> topics;
-  final VoidCallback? onOpenExplore;
-  final void Function(BookCardModel book)? onReadMore;
+  final VoidCallback onOpenExplore;
 
   @override
   Widget build(BuildContext context) {
-    if (books.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final book = books.first;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Explore Stories',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const Spacer(),
-              if (onOpenExplore != null)
-                TextButton(
-                  onPressed: onOpenExplore,
-                  child: const Text('See all'),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 86,
-                height: 120,
-                child: _StoryCard(
-                  book: book,
-                  apiService: apiService,
-                  width: 86,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      book.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
+    if (books.isEmpty) return const SizedBox.shrink();
+    final lead = books.first;
+    final covers = books.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          lead.primaryGenre.isEmpty ? 'Portal Fantasy' : lead.primaryGenre,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: covers.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final item = covers[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: SizedBox(
+                  height: 120,
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => StoryDetailScreen(
+                            apiService: apiService,
+                            book: BookDetailModel(
+                              id: item.id,
+                              title: item.title,
+                              author: item.author,
+                              description: item.description,
+                              statusText: item.statusText,
+                              rating: item.rating,
+                              genre: item.primaryGenre,
+                              cta: item.cta,
+                              coverPath: item.coverPath,
+                            ),
                           ),
+                        ),
+                      );
+                    },
+                    child: _StoryCard(
+                      book: item,
+                      width: 86,
+                      apiService: apiService,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'by ${book.author}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.muted,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    _ExpandableDescription(
-                      text: book.description,
-                      onReadMore: onReadMore == null
-                          ? null
-                          : () => onReadMore!(book),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              );
+            },
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        _ActiveStoryDetail(book: lead, apiService: apiService),
+        const SizedBox(height: 16),
+        _GenrePillRow(
+          topics: topics,
+          books: books,
+          apiService: apiService,
+          onOpenExplore: onOpenExplore,
+        ),
+      ],
     );
   }
 }
 
 class _DiscoverRailSection {
   const _DiscoverRailSection({required this.title, required this.books});
+
   final String title;
   final List<BookCardModel> books;
 }
@@ -177,38 +170,285 @@ class _DynamicStoryRail extends StatefulWidget {
 }
 
 class _DynamicStoryRailState extends State<_DynamicStoryRail> {
+  late final PageController _pageController;
+  int _activeIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: 0.32);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final books = widget.section.books;
-    if (books.isEmpty) return const SizedBox.shrink();
+    if (widget.section.books.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final book = widget
+        .section
+        .books[_activeIndex.clamp(0, widget.section.books.length - 1)];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-          child: Text(
-            widget.section.title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.section.title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
-          ),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ExploreScreen(
+                      apiService: widget.apiService,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('See all'),
+            ),
+          ],
         ),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 120,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: books.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+          height: 158,
+          child: PageView.builder(
+            controller: _pageController,
+            padEnds: true,
+            itemCount: widget.section.books.length,
+            onPageChanged: (index) => setState(() => _activeIndex = index),
             itemBuilder: (context, index) {
-              return _StoryCard(
-                book: books[index],
-                apiService: widget.apiService,
-                width: 86,
+              final item = widget.section.books[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 10, left: 8),
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => StoryDetailScreen(
+                          apiService: widget.apiService,
+                          book: BookDetailModel(
+                            id: item.id,
+                            title: item.title,
+                            author: item.author,
+                            description: item.description,
+                            statusText: item.statusText,
+                            rating: item.rating,
+                            genre: item.primaryGenre,
+                            cta: item.cta,
+                            coverPath: item.coverPath,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: _StoryCard(
+                    book: item,
+                    width: 96,
+                    apiService: widget.apiService,
+                  ),
+                ),
               );
             },
           ),
         ),
+        const SizedBox(height: 10),
+        _ActiveStoryDetail(
+          book: book,
+          apiService: widget.apiService,
+          onRead: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoryDetailScreen(
+                  apiService: widget.apiService,
+                  book: BookDetailModel(
+                    id: book.id,
+                    title: book.title,
+                    author: book.author,
+                    description: book.description,
+                    statusText: book.statusText,
+                    rating: book.rating,
+                    genre: book.primaryGenre,
+                    cta: book.cta,
+                    coverPath: book.coverPath,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ],
+    );
+  }
+}
+
+class _ActiveStoryDetail extends StatelessWidget {
+  const _ActiveStoryDetail({required this.book, this.onRead, this.apiService});
+
+  final BookCardModel book;
+  final VoidCallback? onRead;
+  final ApiService? apiService;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          book.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontFamily: 'serif',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _ExpandableDescription(
+          text: book.description,
+          onReadMore: () {
+            if (onRead != null) {
+              onRead!();
+              return;
+            }
+            if (apiService == null) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoryDetailScreen(
+                  apiService: apiService!,
+                  book: BookDetailModel(
+                    id: book.id,
+                    title: book.title,
+                    author: book.author,
+                    description: book.description,
+                    statusText: book.statusText,
+                    rating: book.rating,
+                    genre: book.primaryGenre,
+                    cta: book.cta,
+                    coverPath: book.coverPath,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.schedule_rounded,
+                  size: 14,
+                  color: AppTheme.muted,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  book.statusText.isEmpty
+                      ? 'Updated recently'
+                      : book.statusText,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            if (book.rating > 0)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(
+                  book.rating.round().clamp(0, 5),
+                  (_) => const Padding(
+                    padding: EdgeInsets.only(right: 2),
+                    child: Icon(
+                      Icons.star_rounded,
+                      size: 15,
+                      color: Color(0xFFF3C623),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (book.isCompleted) ...[
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                size: 14,
+                color: AppTheme.brand,
+              ),
+              Text(
+                'Completed',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppTheme.brand),
+              ),
+            ],
+            _GenreTag(
+              label: book.primaryGenre.isEmpty ? 'Novel' : book.primaryGenre,
+            ),
+            if (book.secondaryGenre.isNotEmpty)
+              _GenreTag(label: book.secondaryGenre),
+            ElevatedButton(
+              onPressed: onRead,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.brand,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 6,
+                ),
+                minimumSize: const Size(0, 36),
+              ),
+              child: Text(
+                book.cta,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _GenreTag extends StatelessWidget {
+  const _GenreTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+      ),
     );
   }
 }
@@ -229,6 +469,38 @@ class _StoryCard extends StatefulWidget {
 }
 
 class _StoryCardState extends State<_StoryCard> {
+  bool _isFollowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFollowState();
+  }
+
+  Future<void> _loadFollowState() async {
+    final authorId = widget.book.authorUserId;
+    if (authorId == null) return;
+    try {
+      final following = await widget.apiService.fetchAuthorFollowing(authorId);
+      if (!mounted) return;
+      setState(() => _isFollowing = following);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFollow() async {
+    final authorId = widget.book.authorUserId;
+    if (authorId == null) return;
+    try {
+      if (_isFollowing) {
+        await widget.apiService.unfollowAuthor(authorId);
+        setState(() => _isFollowing = false);
+      } else {
+        await widget.apiService.followAuthor(authorId);
+        setState(() => _isFollowing = true);
+      }
+    } catch (_) {}
+  }
+
   void _openDetail() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -244,7 +516,6 @@ class _StoryCardState extends State<_StoryCard> {
             genre: widget.book.primaryGenre,
             cta: widget.book.cta,
             coverPath: widget.book.coverPath,
-            authorUserId: widget.book.authorUserId,
           ),
         ),
       ),
@@ -259,7 +530,8 @@ class _StoryCardState extends State<_StoryCard> {
         : widget.apiService.resolveAssetUrl(widget.book.coverPath);
     final compact = widget.width <= 100;
 
-    // Compact carousel tiles: cover only. Parent is often 86x120 — never use Column.
+    // Compact carousel tiles: cover only (matches Inkitt horizontal rows).
+    // Must never use Column here — parent is often 86×120 and overflows easily.
     if (compact) {
       return GestureDetector(
         onTap: _openDetail,
@@ -358,6 +630,7 @@ class _StoryCardState extends State<_StoryCard> {
   }
 }
 
+
 class _AuthorsStrip extends StatefulWidget {
   const _AuthorsStrip({required this.books, required this.apiService});
 
@@ -369,57 +642,142 @@ class _AuthorsStrip extends StatefulWidget {
 }
 
 class _AuthorsStripState extends State<_AuthorsStrip> {
+  Map<int, bool> _following = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFollowStates();
+  }
+
+  Future<void> _loadFollowStates() async {
+    final ids = <int>[];
+    final seenNames = <String>{};
+    for (final book in widget.books) {
+      final name = book.author.trim().isEmpty ? 'Unknown' : book.author;
+      if (seenNames.contains(name)) continue;
+      seenNames.add(name);
+      final aid = book.authorUserId;
+      if (aid != null) ids.add(aid);
+      if (seenNames.length >= 8) break;
+    }
+    if (ids.isEmpty) return;
+    final map = await widget.apiService.fetchAuthorsFollowing(ids);
+    if (!mounted) return;
+    setState(() => _following = map);
+  }
+
+  Future<void> _toggleFollowFor(int authorId) async {
+    final currently = _following[authorId] ?? false;
+    try {
+      if (currently) {
+        await widget.apiService.unfollowAuthor(authorId);
+      } else {
+        await widget.apiService.followAuthor(authorId);
+      }
+      if (!mounted) return;
+      setState(() => _following[authorId] = !currently);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
-    final authors = <String, BookCardModel>{};
-    for (final b in widget.books) {
-      if (b.author.trim().isEmpty) continue;
-      authors.putIfAbsent(b.author, () => b);
+    final byAuthor = <String, BookCardModel>{};
+    for (final book in widget.books) {
+      byAuthor.putIfAbsent(
+        book.author.trim().isEmpty ? 'Unknown' : book.author,
+        () => book,
+      );
+      if (byAuthor.length >= 8) break;
     }
-    final list = authors.values.take(12).toList();
-    if (list.isEmpty) return const SizedBox.shrink();
+
+    final authors = byAuthor.entries.toList();
+    if (authors.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-          child: Text(
-            'New Authors on Inkitt',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
+        Text(
+          'New Authors on Inkitt',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 96,
+          height: 70,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemCount: authors.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
-              final book = list[index];
-              return SizedBox(
-                width: 72,
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.grey.shade200,
-                      child: Text(
-                        book.author.isNotEmpty ? book.author[0].toUpperCase() : '?',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
+              final author = authors[index].key;
+              final book = authors[index].value;
+              final letter = author.isNotEmpty ? author[0].toUpperCase() : 'A';
+              final authorId = book.authorUserId;
+              final isFollowing = authorId != null
+                  ? (_following[authorId] ?? false)
+                  : false;
+              return Column(
+                children: [
+                  GestureDetector(
+                    onTap: authorId != null
+                        ? () => _toggleFollowFor(authorId)
+                        : null,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: const Color(0xFFE8EEF9),
+                          child: Text(
+                            letter,
+                            style: const TextStyle(color: AppTheme.brand),
+                          ),
+                        ),
+                        if (authorId != null)
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isFollowing
+                                    ? Colors.white
+                                    : Colors.black.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                isFollowing ? 'Following' : 'Follow',
+                                style: TextStyle(
+                                  color: isFollowing
+                                      ? AppTheme.brand
+                                      : Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      book.author,
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: 48,
+                    child: Text(
+                      author,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(fontSize: 10),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               );
             },
           ),
@@ -431,72 +789,56 @@ class _AuthorsStripState extends State<_AuthorsStrip> {
 
 class _GenrePillRow extends StatelessWidget {
   const _GenrePillRow({
-    this.genres = const [],
-    this.topics = const [],
-    this.books = const [],
-    this.apiService,
+    required this.topics,
+    required this.books,
+    required this.apiService,
     this.onOpenExplore,
   });
 
-  final List<String> genres;
-  final List<dynamic> topics;
+  final List<ExploreTopicModel> topics;
   final List<BookCardModel> books;
-  final ApiService? apiService;
+  final ApiService apiService;
   final VoidCallback? onOpenExplore;
 
   @override
   Widget build(BuildContext context) {
-    final labels = <String>[];
-    if (genres.isNotEmpty) {
-      labels.addAll(genres);
-    } else if (topics.isNotEmpty) {
-      for (final t in topics) {
-        if (t is String && t.trim().isNotEmpty) {
-          labels.add(t);
-        } else if (t is Map && t['name'] != null) {
-          labels.add(t['name'].toString());
-        }
-      }
-    } else {
-      for (final b in books) {
-        if (b.primaryGenre.trim().isNotEmpty) labels.add(b.primaryGenre);
-      }
+    final genres = <String>{};
+    for (final b in books) {
+      if (b.primaryGenre.isNotEmpty) genres.add(b.primaryGenre);
+      if (genres.length >= 8) break;
     }
-    final unique = labels.toSet().take(10).toList();
-    if (unique.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (onOpenExplore != null)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onOpenExplore,
-              child: const Text('Explore genres'),
-            ),
-          ),
-        SizedBox(
-          height: 36,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: unique.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  unique[index],
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+    final items = genres.toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final label = items[index];
+          return ActionChip(
+            label: Text(label),
+            onPressed: () async {
+              final books = await apiService.fetchBooksByTag(label);
+              if (!context.mounted) return;
+              if (books.isEmpty && onOpenExplore != null) {
+                onOpenExplore!();
+                return;
+              }
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _GenreBooksScreen(
+                    genre: label,
+                    books: books,
+                    apiService: apiService,
+                  ),
                 ),
               );
             },
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 }
@@ -509,28 +851,77 @@ class _CategoryTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TabBar(
-      controller: tabController,
-      isScrollable: true,
-      labelColor: Colors.black87,
-      unselectedLabelColor: Colors.black45,
-      indicatorColor: const Color(0xFF00C853),
-      labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-      tabs: labels.map((l) => Tab(text: l)).toList(),
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        scrollDirection: Axis.horizontal,
+        itemCount: labels.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 20),
+        itemBuilder: (context, index) {
+          final isSelected = tabController.index == index;
+          return GestureDetector(
+            onTap: () => tabController.animateTo(index),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  labels[index],
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: isSelected ? AppTheme.brand : AppTheme.muted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: 3,
+                  width: isSelected
+                      ? math.max(labels[index].length * 11.0, 60)
+                      : 0,
+                  color: isSelected ? AppTheme.brand : Colors.transparent,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Duplicate _StoryCard removed — the stateful _StoryCard above is used now.
+
+class _BookCoverFallback extends StatelessWidget {
+  const _BookCoverFallback({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color, Color.lerp(color, Colors.black, 0.3) ?? color],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
     );
   }
 }
 
 class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  _TabBarDelegate({required this.child});
-
   final Widget child;
 
-  @override
-  double get minExtent => 48;
+  _TabBarDelegate({required this.child});
 
   @override
-  double get maxExtent => 48;
+  double get maxExtent => 64;
+
+  @override
+  double get minExtent => 64;
 
   @override
   Widget build(
@@ -538,13 +929,75 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Material(
-      color: Colors.white,
-      elevation: overlapsContent ? 1 : 0,
-      child: child,
-    );
+    return child;
   }
 
   @override
   bool shouldRebuild(_TabBarDelegate oldDelegate) => false;
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+
+class _GenreBooksScreen extends StatelessWidget {
+  const _GenreBooksScreen({
+    required this.genre,
+    required this.books,
+    required this.apiService,
+  });
+
+  final String genre;
+  final List<Map<String, dynamic>> books;
+  final ApiService apiService;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = genre.startsWith('#') ? genre : '#$genre';
+    return Scaffold(
+      appBar: AppBar(title: Text(label)),
+      body: books.isEmpty
+          ? const Center(child: Text('No stories for this tag yet'))
+          : ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: books.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final item = books[index];
+                final cover = (item['cover_path'] ?? '').toString();
+                return ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: Color(0xFFE8E8E8)),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => StoryDetailScreen(
+                          apiService: apiService,
+                          book: BookDetailModel.fromMap(item),
+                        ),
+                      ),
+                    );
+                  },
+                  leading: SizedBox(
+                    width: 40,
+                    height: 56,
+                    child: cover.isNotEmpty
+                        ? Image.network(
+                            apiService.resolveAssetUrl(cover),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const ColoredBox(color: Color(0xFFE4E4E4)),
+                          )
+                        : const ColoredBox(color: Color(0xFFE4E4E4)),
+                  ),
+                  title: Text(item['title']?.toString() ?? ''),
+                  subtitle: Text(item['author']?.toString() ?? ''),
+                );
+              },
+            ),
+    );
+  }
 }

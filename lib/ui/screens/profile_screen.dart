@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/app_bootstrap.dart';
 import '../../data/services/api_service.dart';
+import 'edit_chapter_screen.dart';
+import 'story_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -31,6 +33,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _isSavingProfile = false;
   bool _isFollowing = false;
   int? _followerCount;
+  List<LibraryEntryModel> _currentReads = const [];
+  List<Map<String, dynamic>> _myReviews = const [];
 
   @override
   void initState() {
@@ -40,6 +44,33 @@ class _ProfileScreenState extends State<ProfileScreen>
     _wallFuture = widget.apiService.fetchChatMessages();
     _activityFuture = widget.apiService.fetchNotifications();
     _loadUserProfile();
+    _loadReadingAndReviews();
+  }
+
+  Future<void> _loadReadingAndReviews() async {
+    try {
+      final entries = await widget.apiService.fetchLibraryEntries();
+      final reviews = await widget.apiService.fetchMyReviews();
+      if (!mounted) return;
+      final parsed = <LibraryEntryModel>[];
+      for (final row in entries) {
+        try {
+          parsed.add(LibraryEntryModel.fromMap(row));
+        } catch (_) {}
+      }
+      setState(() {
+        _currentReads = parsed
+            .where((e) {
+              final s = e.readingStatus.toLowerCase().trim();
+              return s != 'completed' &&
+                  s != 'complete' &&
+                  s != 'finished' &&
+                  s != 'done';
+            })
+            .toList();
+        _myReviews = reviews;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -93,6 +124,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     final displayNameController = TextEditingController(
       text: _valueAsString(currentProfile['display_name']),
     );
+    final bioController = TextEditingController(
+      text: _valueAsString(currentProfile['bio']),
+    );
     String photoUrl = _valueAsString(currentProfile['photo_url']);
     String coverUrl = _valueAsString(currentProfile['cover_url']);
     bool uploadingPhoto = false;
@@ -136,7 +170,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           child: StatefulBuilder(
             builder: (context, setModalState) {
-              return Column(
+              return SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -159,6 +194,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                     controller: displayNameController,
                     decoration: const InputDecoration(
                       labelText: 'Display name',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bioController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Bio',
+                      hintText: 'Tell readers about yourself…',
+                      alignLabelWithHint: true,
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -301,15 +346,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                                           .trim(),
                                       'photo_url': photoUrl,
                                       'cover_url': coverUrl,
+                                      'bio': bioController.text.trim(),
                                     });
                                 if (!mounted) {
                                   return;
                                 }
+                                // Re-fetch /api/me so cover_url + bio stick after leaving the screen
+                                Map<String, dynamic> refreshed = {
+                                  ...currentProfile,
+                                  ...updatedProfile,
+                                };
+                                try {
+                                  final me = await widget.apiService.fetchMe();
+                                  if (me.isNotEmpty) {
+                                    refreshed = {...refreshed, ...me};
+                                  }
+                                } catch (_) {}
                                 setState(() {
-                                  _userProfile = {
-                                    ...currentProfile,
-                                    ...updatedProfile,
-                                  };
+                                  _userProfile = refreshed;
                                 });
                                 Navigator.of(context).pop();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -346,6 +400,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   const SizedBox(height: 24),
                 ],
+              ),
               );
             },
           ),
@@ -356,9 +411,12 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.profile.displayName.trim().isNotEmpty
-        ? widget.profile.displayName
-        : widget.profile.username;
+    final profileName = _valueAsString(_userProfile?['display_name']).trim();
+    final displayName = profileName.isNotEmpty
+        ? profileName
+        : (widget.profile.displayName.trim().isNotEmpty
+            ? widget.profile.displayName
+            : widget.profile.username);
     final usernameHandle = widget.profile.username
         .toLowerCase()
         .replaceAll(' ', '_')
@@ -630,6 +688,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 _AboutTab(
                   profile: widget.profile,
                   apiService: widget.apiService,
+                  bio: _valueAsString(_userProfile?['bio']),
+                  currentReads: _currentReads,
                 ),
                 _StoriesTab(
                   storiesFuture: _storiesFuture,
@@ -637,7 +697,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 _WallTab(messagesFuture: _wallFuture),
                 _ActivityTab(notificationsFuture: _activityFuture),
-                _ReviewsTab(achievements: widget.achievements),
+                _ReviewsTab(
+                  reviews: _myReviews,
+                  apiService: widget.apiService,
+                ),
               ],
             ),
           ),
@@ -678,16 +741,103 @@ class _StatCard extends StatelessWidget {
 }
 
 class _AboutTab extends StatelessWidget {
-  const _AboutTab({required this.profile, required this.apiService});
+  const _AboutTab({
+    required this.profile,
+    required this.apiService,
+    this.bio = '',
+    this.currentReads = const [],
+  });
 
   final ProfileModel profile;
   final ApiService apiService;
+  final String bio;
+  final List<LibraryEntryModel> currentReads;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        Text(
+          'Currently Reading',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (currentReads.isEmpty)
+          Text(
+            'No books in progress — tap Read Now on a story to start.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppTheme.muted,
+            ),
+          )
+        else
+          SizedBox(
+            height: 150,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: currentReads.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final e = currentReads[index];
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => StoryDetailScreen(
+                          apiService: apiService,
+                          book: BookDetailModel(
+                            id: e.book.id,
+                            title: e.book.title,
+                            author: e.book.author,
+                            description: e.book.description,
+                            statusText: e.book.statusText,
+                            rating: e.book.rating,
+                            genre: e.book.primaryGenre,
+                            cta: e.book.cta,
+                            coverPath: e.book.coverPath,
+                            authorUserId: e.book.authorUserId,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: SizedBox(
+                    width: 90,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: e.book.coverPath.isNotEmpty
+                                ? Image.network(
+                                    apiService.resolveAssetUrl(e.book.coverPath),
+                                    width: 90,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        const ColoredBox(color: Color(0xFFE4E4E4)),
+                                  )
+                                : const ColoredBox(color: Color(0xFFE4E4E4)),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          e.book.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        const SizedBox(height: 28),
         Text(
           'Stats',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -764,7 +914,7 @@ class _AboutTab extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            'No bio added yet',
+            bio.trim().isEmpty ? 'No bio added yet' : bio.trim(),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               height: 1.6,
               color: const Color(0xFF555555),
@@ -930,6 +1080,120 @@ class _StoriesTab extends StatelessWidget {
               ),
               child: ListTile(
                 contentPadding: const EdgeInsets.all(16),
+                onTap: () {
+                  final id = (story['id'] as num?)?.toInt();
+                  if (id == null) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => StoryDetailScreen(
+                        apiService: apiService,
+                        book: BookDetailModel.fromMap(story),
+                      ),
+                    ),
+                  );
+                },
+                trailing: PopupMenuButton<String>(
+                  onSelected: (v) async {
+                    final id = (story['id'] as num?)?.toInt();
+                    if (id == null) return;
+                    if (v == 'read') {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => StoryDetailScreen(
+                            apiService: apiService,
+                            book: BookDetailModel.fromMap(story),
+                          ),
+                        ),
+                      );
+                    } else if (v == 'chapters') {
+                      List<Map<String, dynamic>> chapters = const [];
+                      try {
+                        chapters = await apiService.fetchStoryChapters(id);
+                      } catch (_) {}
+                      if (!context.mounted) return;
+                      final choice = await showModalBottomSheet<Object>(
+                        context: context,
+                        isScrollControlled: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                        ),
+                        builder: (ctx) => SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Chapters',
+                                  style: Theme.of(ctx)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 8),
+                                if (chapters.isEmpty)
+                                  const Text('No chapters yet')
+                                else
+                                  ...chapters.map((c) {
+                                    final n =
+                                        (c['chapter_number'] as num?)?.toInt() ??
+                                        0;
+                                    return ListTile(
+                                      title: Text(
+                                        (c['title'] ?? 'Chapter $n').toString(),
+                                      ),
+                                      onTap: () => Navigator.pop(ctx, c),
+                                    );
+                                  }),
+                                FilledButton.icon(
+                                  onPressed: () => Navigator.pop(ctx, 'new'),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add new chapter'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                      if (!context.mounted || choice == null) return;
+                      if (choice == 'new') {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EditChapterScreen(
+                              apiService: apiService,
+                              storyId: id,
+                              createNew: true,
+                            ),
+                          ),
+                        );
+                      } else if (choice is Map<String, dynamic>) {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EditChapterScreen(
+                              apiService: apiService,
+                              storyId: id,
+                              chapterId: (choice['id'] as num?)?.toInt(),
+                              chapterNumber:
+                                  (choice['chapter_number'] as num?)?.toInt(),
+                              chapterTitle:
+                                  (choice['title'] ?? 'Chapter').toString(),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'read', child: Text('Read / view')),
+                    PopupMenuItem(
+                      value: 'chapters',
+                      child: Text('Manage chapters'),
+                    ),
+                  ],
+                ),
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: cover.isNotEmpty
@@ -1121,13 +1385,14 @@ class _ActivityTab extends StatelessWidget {
 }
 
 class _ReviewsTab extends StatelessWidget {
-  const _ReviewsTab({required this.achievements});
+  const _ReviewsTab({required this.reviews, required this.apiService});
 
-  final List<AchievementGroupModel> achievements;
+  final List<Map<String, dynamic>> reviews;
+  final ApiService apiService;
 
   @override
   Widget build(BuildContext context) {
-    if (achievements.isEmpty) {
+    if (reviews.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1140,63 +1405,76 @@ class _ReviewsTab extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'No reviews yet',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppTheme.muted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Rate a book from its story page to see it here.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppTheme.muted,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: achievements.length,
+      itemCount: reviews.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        final group = achievements[index];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              group.groupName,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            ...group.items.map((item) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE5E5E5)),
+        final r = reviews[index];
+        final book = Map<String, dynamic>.from(
+          (r['book'] as Map?) ?? const {},
+        );
+        final title = (book['title'] ?? 'Untitled').toString();
+        final author = (book['author'] ?? '').toString();
+        final cover = (book['cover_path'] ?? '').toString();
+        final rating = r['rating'];
+        final comment = (r['comment'] ?? '').toString();
+        return ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE5E5E5)),
+          ),
+          onTap: () {
+            final id = (book['id'] as num?)?.toInt();
+            if (id == null) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoryDetailScreen(
+                  apiService: apiService,
+                  book: BookDetailModel.fromMap(book),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      item.subtitle,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.progressLabel,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: AppTheme.muted),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
+              ),
+            );
+          },
+          leading: SizedBox(
+            width: 44,
+            height: 60,
+            child: cover.isNotEmpty
+                ? Image.network(
+                    apiService.resolveAssetUrl(cover),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        const ColoredBox(color: Color(0xFFE4E4E4)),
+                  )
+                : const ColoredBox(color: Color(0xFFE4E4E4)),
+          ),
+          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            [
+              if (author.isNotEmpty) author,
+              if (rating != null) '★ $rating',
+              if (comment.isNotEmpty) comment,
+            ].join(' · '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right),
         );
       },
     );
@@ -1204,9 +1482,9 @@ class _ReviewsTab extends StatelessWidget {
 }
 
 class _TabHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final Widget child;
-
   _TabHeaderDelegate({required this.child});
+
+  final Widget child;
 
   @override
   double get maxExtent => 48;

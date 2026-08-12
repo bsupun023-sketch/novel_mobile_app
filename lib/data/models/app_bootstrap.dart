@@ -207,14 +207,21 @@ class LibraryEntryModel {
   final String secondaryGenre;
 
   factory LibraryEntryModel.fromMap(Map<String, dynamic> map) {
+    final bookMap = Map<String, dynamic>.from(
+      (map['book'] as Map?) ?? const <String, dynamic>{},
+    );
+    // Ensure book id is present for navigation
+    if (bookMap['id'] == null && map['book_id'] != null) {
+      bookMap['id'] = map['book_id'];
+    }
     return LibraryEntryModel(
-      id: map['id'] as int,
-      book: BookCardModel.fromMap(map['book'] as Map<String, dynamic>),
-      readingStatus: map['reading_status'] as String,
-      updatedText: map['updated_text'] as String,
-      chapters: map['chapters'] as int,
-      primaryGenre: map['primary_genre'] as String,
-      secondaryGenre: map['secondary_genre'] as String,
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      book: BookCardModel.fromMap(bookMap),
+      readingStatus: (map['reading_status'] ?? 'Reading').toString(),
+      updatedText: (map['updated_text'] ?? '').toString(),
+      chapters: (map['chapters'] as num?)?.toInt() ?? 0,
+      primaryGenre: (map['primary_genre'] ?? '').toString(),
+      secondaryGenre: (map['secondary_genre'] ?? '').toString(),
     );
   }
 }

@@ -100,10 +100,10 @@ def _ensure_mysql_extra_tables(connection) -> int:
             """
             CREATE TABLE IF NOT EXISTS author_follows (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                author_user_id INT NOT NULL,
-                follower_user_id INT NOT NULL,
+                user_id INT NOT NULL,
+                author_id INT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_follow (author_user_id, follower_user_id)
+                UNIQUE KEY uq_follow (user_id, author_id)
             )
             """,
         ),
@@ -130,9 +130,12 @@ def _ensure_mysql_extra_tables(connection) -> int:
                 added += 1
                 LOGGER.info("Created missing table: %s", name)
 
+        # Column patches on existing tables
         column_patches = [
             ("app_users", "cover_url", "ALTER TABLE app_users ADD COLUMN cover_url TEXT NULL"),
             ("app_users", "bio", "ALTER TABLE app_users ADD COLUMN bio TEXT NULL"),
+            ("author_follows", "user_id", "ALTER TABLE author_follows ADD COLUMN user_id INT NULL"),
+            ("author_follows", "author_id", "ALTER TABLE author_follows ADD COLUMN author_id INT NULL"),
             ("app_users", "followers_count", "ALTER TABLE app_users ADD COLUMN followers_count INT NOT NULL DEFAULT 0"),
             ("books", "user_id", "ALTER TABLE books ADD COLUMN user_id INT NULL AFTER id"),
             ("books", "primary_genre", "ALTER TABLE books ADD COLUMN primary_genre VARCHAR(80) NOT NULL DEFAULT ''"),
@@ -152,6 +155,7 @@ def _ensure_mysql_extra_tables(connection) -> int:
             except Exception as col_exc:
                 LOGGER.warning("Column patch %s.%s skipped: %s", table, column, col_exc)
 
+        # If book_reviews has body but not comment, copy/rename
         try:
             cursor.execute("SHOW COLUMNS FROM book_reviews LIKE 'body'")
             has_body = cursor.fetchone() is not None
@@ -273,6 +277,7 @@ def run_startup_tasks() -> dict[str, Any]:
         "db_mode": "sqlite" if USE_SQLITE else "mysql",
     }
 
+    # Ensure MySQL is reachable when configured; otherwise fall back to SQLite.
     try:
         from . import database as db_mod
         from . import db_runtime
@@ -302,7 +307,6 @@ def run_startup_tasks() -> dict[str, Any]:
             "write_screen",
             "tags",
             "books",
-            "reading_list_items",
         ):
             result["counts"][tbl] = _query_count(conn, tbl)
         conn.close()

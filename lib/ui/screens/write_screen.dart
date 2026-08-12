@@ -70,17 +70,108 @@ class _WriteScreenState extends State<WriteScreen>
   }
 
   Future<void> _openEditChapter(Map<String, dynamic> story) async {
-    final storyId = story['id'] as int?;
+    final storyId = (story['id'] as num?)?.toInt();
     if (storyId == null) return;
-    await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute<Map<String, dynamic>>(
-        builder: (_) => EditChapterScreen(
-          apiService: widget.apiService,
-          storyId: storyId,
-          chapterTitle: 'Chapter 1',
-        ),
+
+    List<Map<String, dynamic>> chapters = const [];
+    try {
+      chapters = await widget.apiService.fetchStoryChapters(storyId);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    final choice = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Chapters — ${story['title'] ?? 'Story'}',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (chapters.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('No chapters yet. Add the first one.'),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: chapters.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final c = chapters[i];
+                        final num = (c['chapter_number'] as num?)?.toInt() ?? (i + 1);
+                        final title = (c['title'] ?? 'Chapter $num').toString();
+                        final status = (c['submission_status'] ?? 'draft').toString();
+                        return ListTile(
+                          leading: CircleAvatar(
+                            radius: 16,
+                            child: Text('$num', style: const TextStyle(fontSize: 12)),
+                          ),
+                          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(status),
+                          trailing: const Icon(Icons.edit_outlined, size: 18),
+                          onTap: () => Navigator.pop(ctx, c),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(ctx, 'new'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add new chapter'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+
+    if (!mounted || choice == null) return;
+
+    if (choice == 'new') {
+      await Navigator.of(context).push<Map<String, dynamic>>(
+        MaterialPageRoute<Map<String, dynamic>>(
+          builder: (_) => EditChapterScreen(
+            apiService: widget.apiService,
+            storyId: storyId,
+            createNew: true,
+            chapterTitle: 'Chapter ${(chapters.length + 1)}',
+          ),
+        ),
+      );
+    } else if (choice is Map<String, dynamic>) {
+      final id = (choice['id'] as num?)?.toInt();
+      final num = (choice['chapter_number'] as num?)?.toInt();
+      final title = (choice['title'] ?? 'Chapter').toString();
+      await Navigator.of(context).push<Map<String, dynamic>>(
+        MaterialPageRoute<Map<String, dynamic>>(
+          builder: (_) => EditChapterScreen(
+            apiService: widget.apiService,
+            storyId: storyId,
+            chapterId: id,
+            chapterNumber: num,
+            chapterTitle: title,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteStory(Map<String, dynamic> story) async {
@@ -491,7 +582,7 @@ class _StoryListCard extends StatelessWidget {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'edit', child: Text('Edit details')),
-              PopupMenuItem(value: 'chapter', child: Text('Edit chapter')),
+              PopupMenuItem(value: 'chapter', child: Text('Chapters')),
               PopupMenuItem(value: 'delete', child: Text('Delete')),
             ],
             icon: const Icon(Icons.more_vert_rounded, size: 20),

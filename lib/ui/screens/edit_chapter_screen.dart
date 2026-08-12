@@ -8,14 +8,22 @@ class EditChapterScreen extends StatefulWidget {
     super.key,
     required this.apiService,
     required this.storyId,
+    this.chapterId,
+    this.chapterNumber,
     this.chapterTitle = 'Chapter 1',
     this.initialContent = '',
+    this.createNew = false,
   });
 
   final ApiService apiService;
   final int storyId;
+  /// When set, load/update this specific chapter.
+  final int? chapterId;
+  final int? chapterNumber;
   final String chapterTitle;
   final String initialContent;
+  /// When true, start blank and POST a new chapter on save.
+  final bool createNew;
 
   @override
   State<EditChapterScreen> createState() => _EditChapterScreenState();
@@ -61,11 +69,57 @@ class _EditChapterScreenState extends State<EditChapterScreen> {
   Future<void> _loadChapter() async {
     setState(() => _isLoading = true);
     try {
-      final chapters = await widget.apiService.fetchStoryChapters(widget.storyId);
-      if (chapters.isNotEmpty) {
-        final chapter = chapters.first;
-        _chapterId = chapter['id'] as int?;
-        _chapterNumber = (chapter['chapter_number'] as int?) ?? 1;
+      // New chapter: pick next chapter number, leave editors blank.
+      if (widget.createNew) {
+        final chapters =
+            await widget.apiService.fetchStoryChapters(widget.storyId);
+        int next = 1;
+        for (final c in chapters) {
+          final n = (c['chapter_number'] as num?)?.toInt() ?? 0;
+          if (n >= next) next = n + 1;
+        }
+        _chapterId = null;
+        _chapterNumber = widget.chapterNumber ?? next;
+        _titleController.text = widget.chapterTitle.isNotEmpty
+            ? widget.chapterTitle
+            : 'Chapter $_chapterNumber';
+        _textController.text = widget.initialContent;
+        _chapterNotes = '';
+        _submissionStatus = 'draft';
+        _scheduledFor = null;
+        return;
+      }
+
+      final chapters =
+          await widget.apiService.fetchStoryChapters(widget.storyId);
+      Map<String, dynamic>? chapter;
+      if (widget.chapterId != null) {
+        for (final c in chapters) {
+          if ((c['id'] as num?)?.toInt() == widget.chapterId) {
+            chapter = c;
+            break;
+          }
+        }
+      }
+      // Fall back to requested number, else first chapter.
+      if (chapter == null && widget.chapterNumber != null) {
+        for (final c in chapters) {
+          if ((c['chapter_number'] as num?)?.toInt() == widget.chapterNumber) {
+            chapter = c;
+            break;
+          }
+        }
+      }
+      if (chapter == null && chapters.isNotEmpty && !widget.createNew) {
+        chapter = chapters.first;
+      }
+
+      if (chapter != null) {
+        _chapterId = (chapter['id'] as num?)?.toInt();
+        _chapterNumber =
+            (chapter['chapter_number'] as num?)?.toInt() ??
+            widget.chapterNumber ??
+            1;
         _titleController.text =
             chapter['title']?.toString().trim().isNotEmpty == true
             ? chapter['title'].toString()
@@ -73,19 +127,27 @@ class _EditChapterScreenState extends State<EditChapterScreen> {
         _textController.text = chapter['content']?.toString() ?? '';
         _chapterNotes = chapter['notes']?.toString() ?? '';
         _submissionStatus =
-          chapter['submission_status']?.toString().trim().isNotEmpty == true
-          ? chapter['submission_status'].toString()
-          : 'draft';
+            chapter['submission_status']?.toString().trim().isNotEmpty == true
+            ? chapter['submission_status'].toString()
+            : 'draft';
         final scheduledFor = chapter['scheduled_for']?.toString();
-        _scheduledFor =
-          scheduledFor != null && scheduledFor.isNotEmpty
-          ? DateTime.tryParse(scheduledFor)
-          : null;
+        _scheduledFor = scheduledFor != null && scheduledFor.isNotEmpty
+            ? DateTime.tryParse(scheduledFor)
+            : null;
+      } else {
+        // No chapters yet — prepare chapter 1 as new.
+        _chapterId = null;
+        _chapterNumber = widget.chapterNumber ?? 1;
+        _titleController.text = widget.chapterTitle;
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not load chapter. You can still write and save.')),
+          const SnackBar(
+            content: Text(
+              'Could not load chapter. You can still write and save.',
+            ),
+          ),
         );
       }
     } finally {
@@ -156,53 +218,60 @@ class _EditChapterScreenState extends State<EditChapterScreen> {
 
   Future<void> _editChapterNotes() async {
     final controller = TextEditingController(text: _chapterNotes);
-    final updatedNotes = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+    String? updatedNotes;
+    try {
+      updatedNotes = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Chapter Notes',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'Add internal notes for this chapter...',
-                border: OutlineInputBorder(),
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Chapter Notes',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context, controller.text.trim()),
-                child: const Text('Save Notes'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  hintText: 'Add internal notes for this chapter...',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(context, controller.text.trim()),
+                  child: const Text('Save Notes'),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-
-    controller.dispose();
+      );
+    } finally {
+      // Dispose after the route is fully closed so TextField is not using it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.dispose();
+      });
+    }
     if (updatedNotes == null) return;
 
-    setState(() => _chapterNotes = updatedNotes);
+    setState(() => _chapterNotes = updatedNotes!);
     await _saveChapter(successMessage: 'Chapter notes updated');
   }
 

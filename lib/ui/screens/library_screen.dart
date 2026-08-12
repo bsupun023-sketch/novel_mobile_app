@@ -27,21 +27,24 @@ class _LibraryScreenState extends State<LibraryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<LibraryEntryModel> _entries = [];
-  List<ReadingListModel> _lists = [];
-  bool _loadingEntries = true;
-  bool _loadingLists = true;
+  List<ReadingListModel> _readingLists = [];
+  bool _loading = false;
+  bool _listsLoading = false;
 
-  bool _isCompleted(LibraryEntryModel e) =>
-      e.readingStatus.toLowerCase().contains('complete');
+  bool _isCompleted(LibraryEntryModel e) {
+    final s = e.readingStatus.toLowerCase().trim();
+    return s == 'completed' ||
+        s == 'complete' ||
+        s == 'finished' ||
+        s == 'done';
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _entries = List<LibraryEntryModel>.from(widget.data.libraryEntries);
-    _lists = List<ReadingListModel>.from(widget.data.profile.readingLists);
-    _loadingEntries = false;
-    _loadingLists = false;
+    _entries = List.from(widget.data.libraryEntries);
+    _readingLists = List.from(widget.data.profile.readingLists);
     _loadEntries();
     _loadLists();
   }
@@ -53,34 +56,30 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Future<void> _loadEntries() async {
-    setState(() => _loadingEntries = true);
+    setState(() => _loading = true);
     try {
       final rows = await widget.apiService.fetchLibraryEntries();
       if (!mounted) return;
       setState(() {
-        _entries = rows
-            .map((m) => LibraryEntryModel.fromMap(m))
-            .toList();
-        _loadingEntries = false;
+        _entries = rows.map(LibraryEntryModel.fromMap).toList();
+        _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loadingEntries = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _loadLists() async {
-    setState(() => _loadingLists = true);
+    setState(() => _listsLoading = true);
     try {
       final rows = await widget.apiService.fetchReadingLists();
       if (!mounted) return;
       setState(() {
-        _lists = rows
-            .map((m) => ReadingListModel.fromMap(m))
-            .toList();
-        _loadingLists = false;
+        _readingLists = rows.map(ReadingListModel.fromMap).toList();
+        _listsLoading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loadingLists = false);
+      if (mounted) setState(() => _listsLoading = false);
     }
   }
 
@@ -89,7 +88,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New reading list'),
+        title: const Text('Create New List'),
         content: TextField(
           controller: c,
           autofocus: true,
@@ -109,13 +108,30 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
     if (name == null || name.isEmpty) return;
     try {
-      await widget.apiService.createReadingList({
+      final created = await widget.apiService.createReadingList({
         'name': name,
         'story_count': 0,
         'cover_path': '',
-        'sort_order': _lists.length + 1,
+        'sort_order': _readingLists.length + 1,
       });
       await _loadLists();
+      if (!mounted) return;
+      final newId = (created['id'] as num?)?.toInt();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newId != null
+                ? 'Created "$name"'
+                : 'Created "$name". Pull to refresh if it is not visible.',
+          ),
+        ),
+      );
+      // If list still empty after create, force another fetch shortly after
+      if (_readingLists.isEmpty ||
+          !_readingLists.any((l) => l.name == name)) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await _loadLists();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -147,6 +163,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
       ),
     );
+    if (!mounted) return;
     await _loadLists();
   }
 
@@ -206,41 +223,49 @@ class _LibraryScreenState extends State<LibraryScreen>
           unselectedLabelColor: AppTheme.muted,
           indicatorColor: AppTheme.brand,
           tabs: const [
-            Tab(text: 'Current'),
+            Tab(text: 'Current Reads'),
+            Tab(text: 'Reading Lists'),
             Tab(text: 'History'),
-            Tab(text: 'Lists'),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
             children: [
-              _EntriesPane(
+              _EntriesList(
                 entries: current,
-                loading: _loadingEntries,
-                history: false,
+                loading: _loading,
                 api: widget.apiService,
-                onDiscover: widget.onOpenDiscover,
                 onToggle: _toggle,
                 onDelete: _delete,
-                onRefresh: _loadEntries,
-              ),
-              _EntriesPane(
-                entries: history,
-                loading: _loadingEntries,
-                history: true,
-                api: widget.apiService,
+                onRefresh: () async {
+                  await _loadEntries();
+                  await _loadLists();
+                },
                 onDiscover: widget.onOpenDiscover,
-                onToggle: _toggle,
-                onDelete: _delete,
-                onRefresh: _loadEntries,
               ),
               _ListsPane(
-                lists: _lists,
-                loading: _loadingLists,
+                lists: _readingLists,
+                loading: _listsLoading,
                 onCreate: _createList,
                 onOpen: _openList,
-                onRefresh: _loadLists,
+                onRefresh: () async {
+                  await _loadEntries();
+                  await _loadLists();
+                },
+              ),
+              _EntriesList(
+                entries: history,
+                loading: _loading,
+                api: widget.apiService,
+                onToggle: _toggle,
+                onDelete: _delete,
+                onRefresh: () async {
+                  await _loadEntries();
+                  await _loadLists();
+                },
+                onDiscover: widget.onOpenDiscover,
+                history: true,
               ),
             ],
           ),
@@ -250,26 +275,26 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 }
 
-class _EntriesPane extends StatelessWidget {
-  const _EntriesPane({
+class _EntriesList extends StatelessWidget {
+  const _EntriesList({
     required this.entries,
     required this.loading,
-    required this.history,
     required this.api,
-    required this.onDiscover,
     required this.onToggle,
     required this.onDelete,
     required this.onRefresh,
+    required this.onDiscover,
+    this.history = false,
   });
 
   final List<LibraryEntryModel> entries;
   final bool loading;
-  final bool history;
   final ApiService api;
-  final VoidCallback onDiscover;
   final ValueChanged<LibraryEntryModel> onToggle;
   final ValueChanged<LibraryEntryModel> onDelete;
   final Future<void> Function() onRefresh;
+  final VoidCallback onDiscover;
+  final bool history;
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +420,7 @@ class _ListsPane extends StatelessWidget {
 
   final List<ReadingListModel> lists;
   final bool loading;
-  final VoidCallback onCreate;
+  final Future<void> Function() onCreate;
   final ValueChanged<ReadingListModel> onOpen;
   final Future<void> Function() onRefresh;
 
@@ -407,38 +432,48 @@ class _ListsPane extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(24, 14, 24, 30),
         children: [
-          Row(
-            children: [
-              Text(
-                'Reading Lists',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: onCreate,
-                icon: const Icon(Icons.add),
-                label: const Text('New'),
-              ),
-            ],
+          Text(
+            'Private Reading Lists',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
+          Text(
+            'Tap a list to open, add, or remove stories.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppTheme.muted),
+          ),
+          const SizedBox(height: 18),
           if (loading)
             const Center(child: CircularProgressIndicator())
           else if (lists.isEmpty)
-            const Text('No lists yet. Create one to save stories.')
+            const Center(
+              child: Text(
+                'No lists yet',
+                style: TextStyle(color: AppTheme.muted),
+              ),
+            )
           else
             ...lists.map(
-              (l) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.playlist_play),
-                title: Text(l.name),
-                subtitle: Text('${l.storyCount} stories'),
-                onTap: () => onOpen(l),
+              (l) => Card(
+                child: ListTile(
+                  onTap: () => onOpen(l),
+                  leading: const Icon(Icons.library_books_outlined),
+                  title: Text(l.name),
+                  subtitle: Text('${l.storyCount} stories'),
+                  trailing: const Icon(Icons.chevron_right),
+                ),
               ),
             ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () => onCreate(),
+            icon: const Icon(Icons.add),
+            label: const Text('Create New List'),
+          ),
         ],
       ),
     );
@@ -461,22 +496,25 @@ class _ListDetail extends StatefulWidget {
 }
 
 class _ListDetailState extends State<_ListDetail> {
-  List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  List<Map<String, dynamic>> _items = [];
+  String _name = '';
 
   @override
   void initState() {
     super.initState();
+    _name = widget.listName;
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final rows = await widget.api.fetchReadingListItems(widget.listId);
+      final data = await widget.api.fetchReadingListDetail(widget.listId);
       if (!mounted) return;
       setState(() {
-        _items = rows;
+        _name = data['name']?.toString() ?? widget.listName;
+        _items = List<Map<String, dynamic>>.from(data['items'] as List? ?? []);
         _loading = false;
       });
     } catch (_) {
@@ -484,45 +522,78 @@ class _ListDetailState extends State<_ListDetail> {
     }
   }
 
+  Future<void> _add() async {
+    final rows = await widget.api.searchStories(query: '');
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => ListView(
+        children: rows
+            .map(
+              (r) => ListTile(
+                title: Text('${r['title']}'),
+                subtitle: Text('${r['author']}'),
+                onTap: () => Navigator.pop(ctx, r),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (picked == null) return;
+    final id = (picked['id'] as num?)?.toInt();
+    if (id == null) return;
+    await widget.api.addReadingListItem(widget.listId, id);
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.listName)),
+      appBar: AppBar(
+        title: Text(_name),
+        actions: [
+          IconButton(icon: const Icon(Icons.add), onPressed: _add),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () async {
+              try {
+                await widget.api.deleteReadingList(widget.listId);
+                if (mounted) Navigator.pop(context);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$e')));
+                }
+              }
+            },
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
-              ? const Center(child: Text('No stories in this list yet'))
-              : ListView.builder(
-                  itemCount: _items.length,
-                  itemBuilder: (ctx, i) {
-                    final b = _items[i];
-                    final title = b['title'] as String? ?? 'Story';
-                    final cover = b['cover_path'] as String? ?? '';
-                    return ListTile(
-                      leading: cover.isEmpty
-                          ? const Icon(Icons.menu_book)
-                          : Image.network(
-                              widget.api.resolveAssetUrl(cover),
-                              width: 40,
-                              height: 56,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image),
-                            ),
-                      title: Text(title),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => StoryDetailScreen(
-                              apiService: widget.api,
-                              book: BookDetailModel.fromMap(b),
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+          : ListView.builder(
+              itemCount: _items.length,
+              itemBuilder: (ctx, i) {
+                final it = _items[i];
+                return ListTile(
+                  title: Text('${it['title']}'),
+                  subtitle: Text('by ${it['author']}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: () async {
+                      final itemId = (it['id'] as num?)?.toInt();
+                      if (itemId == null) return;
+                      await widget.api.removeReadingListItem(
+                        widget.listId,
+                        itemId,
+                      );
+                      await _load();
+                    },
+                  ),
+                );
+              },
+            ),
     );
   }
 }
