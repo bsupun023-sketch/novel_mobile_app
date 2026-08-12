@@ -50,8 +50,11 @@ def _seed_tags(connection) -> int:
     cursor = connection.cursor()
     inserted = 0
     try:
+        from . import database as db_mod
+
+        use_sqlite = db_mod.USE_SQLITE
         for name in DEFAULT_TAGS:
-            if USE_SQLITE:
+            if use_sqlite:
                 cursor.execute("SELECT id FROM tags WHERE name=? LIMIT 1", (name,))
                 if cursor.fetchone() is None:
                     cursor.execute("INSERT INTO tags (name) VALUES (?)", (name,))
@@ -77,9 +80,10 @@ def _apply_runtime_patches() -> None:
     """Patch main module helpers for MySQL safety without full file rewrite."""
     try:
         from . import main as main_mod
+        from . import database as db_mod
 
         def _to_db_query(query: str) -> str:
-            return mysql_compat.to_db_query(query, USE_SQLITE)
+            return mysql_compat.to_db_query(query, db_mod.USE_SQLITE)
 
         main_mod._to_db_query = _to_db_query  # type: ignore[attr-defined]
 
@@ -95,6 +99,7 @@ def _apply_runtime_patches() -> None:
 
         try:
             from .tag_routes import register_extra_routes
+
             serialize = getattr(main_mod, "_serialize_book", None)
             register_extra_routes(
                 main_mod.app,
@@ -108,12 +113,15 @@ def _apply_runtime_patches() -> None:
             LOGGER.warning("Extra routes not registered: %s", route_exc)
 
         try:
-            mysql_compat.patch_execute_write(main_mod, USE_SQLITE)
+            mysql_compat.patch_execute_write(main_mod, db_mod.USE_SQLITE)
             LOGGER.info("Patched execute_write for lastrowid recovery")
         except Exception as ew_exc:
             LOGGER.warning("execute_write patch skipped: %s", ew_exc)
 
-        LOGGER.info("Applied MySQL runtime patches (INSERT IGNORE + admin tags)")
+        LOGGER.info(
+            "Applied runtime patches (db_mode=%s)",
+            "sqlite" if db_mod.USE_SQLITE else "mysql",
+        )
     except Exception as exc:
         LOGGER.warning("Runtime patches not applied: %s", exc)
 
@@ -125,7 +133,23 @@ def run_startup_tasks() -> dict[str, Any]:
         "counts": {},
         "tags_seeded": 0,
         "patches_applied": False,
+        "db_mode": "sqlite" if USE_SQLITE else "mysql",
     }
+
+    # Ensure MySQL is reachable when configured; otherwise fall back to SQLite.
+    try:
+        from . import database as db_mod
+
+        if not db_mod.USE_SQLITE:
+            err = db_mod._mysql_probe()
+            if err is not None and db_mod.MYSQL_FALLBACK_SQLITE:
+                db_mod.activate_sqlite_fallback(str(err))
+                result["db_mode"] = "sqlite"
+                result["mysql_fallback_reason"] = str(err)
+            else:
+                result["db_mode"] = "sqlite" if db_mod.USE_SQLITE else "mysql"
+    except Exception as probe_exc:
+        LOGGER.warning("DB probe skipped: %s", probe_exc)
 
     initialized = initialize_database_if_needed()
     result["initialized"] = bool(initialized)
@@ -137,7 +161,7 @@ def run_startup_tasks() -> dict[str, Any]:
         _apply_runtime_patches()
         result["patches_applied"] = True
     except Exception as exc:
-        LOGGER.exception("Patch step failed: %s", exc)
+        LOGGER.exception("Patch step failed: %s", exp if False else exc)
 
     try:
         conn = get_connection()
