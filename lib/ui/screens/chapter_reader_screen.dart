@@ -238,7 +238,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                         );
                       }
                       final c = _chapters[index];
-                      final num =
+                      final chapterNo =
                           (c['chapter_number'] as num?)?.toInt() ?? index + 1;
                       final title = c['title'] as String? ?? 'Untitled';
                       final selected = index == _chapterIndex;
@@ -246,7 +246,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                         selected: selected,
                         selectedTileColor: const Color(0xFFFFF0EE),
                         title: Text(
-                          'Chapter $num: $title',
+                          'Chapter $chapterNo: $title',
                           style: TextStyle(
                             fontWeight:
                                 selected ? FontWeight.w700 : FontWeight.w500,
