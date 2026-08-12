@@ -81,15 +81,25 @@ class ApiService {
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return trimmed;
     }
-    if (trimmed.contains('story_card_images/')) {
-      final filename = trimmed.split('/').last;
+    final clean = trimmed.split('?').first.split('#').first;
+    if (clean.contains('story_card_images/') ||
+        clean.contains('/uploads/') ||
+        clean.contains('\\uploads\\')) {
+      final filename = clean.split('/').last.split('\\').last;
+      if (filename.isNotEmpty) {
+        return '$_baseUrl/uploads/$filename';
+      }
+    }
+    if (!clean.startsWith('/')) {
+      if (clean.startsWith('uploads/')) return '$_baseUrl/$clean';
+      return '$_baseUrl/uploads/$clean';
+    }
+    if (clean.startsWith('/uploads/')) return '$_baseUrl$clean';
+    final filename = clean.split('/').last;
+    if (filename.contains('.') && !clean.contains('/api/')) {
       return '$_baseUrl/uploads/$filename';
     }
-    if (!trimmed.startsWith('/')) {
-      if (trimmed.startsWith('uploads/')) return '$_baseUrl/$trimmed';
-      return '$_baseUrl/uploads/$trimmed';
-    }
-    return '$_baseUrl$trimmed';
+    return '$_baseUrl$clean';
   }
 
   Future<http.Response> _post(
@@ -374,9 +384,18 @@ class ApiService {
     }
   }
 
-  Future<void> createReadingList(Map<String, dynamic> payload) async {
-    final response = await _post('/api/reading-lists', payload, timeout: const Duration(seconds: 8));
+  Future<Map<String, dynamic>> createReadingList(Map<String, dynamic> payload) async {
+    final response = await _post(
+      '/api/reading-lists',
+      payload,
+      timeout: const Duration(seconds: 8),
+    );
     _ensureSuccessResponse(response);
+    try {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      return const <String, dynamic>{'ok': true};
+    }
   }
 
   Future<Map<String, dynamic>> fetchReadingListDetail(int listId) async {
