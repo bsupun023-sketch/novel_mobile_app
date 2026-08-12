@@ -1,7 +1,6 @@
 part of 'discover_screen.dart';
 
-// Compact StoryCard fix: never use Column inside 86x120 constraints.
-// Full file restored from local artifacts with overflow-safe cover-only tiles.
+// Compact StoryCard: cover only for carousels (86x120). Never Column inside constrained height.
 
 class _ExpandableDescription extends StatefulWidget {
   const _ExpandableDescription({required this.text, this.onReadMore});
@@ -116,7 +115,8 @@ class _StoryCardState extends State<_StoryCard> {
         : widget.apiService.resolveAssetUrl(widget.book.coverPath);
     final compact = widget.width <= 100;
 
-    // Compact carousel tiles: cover only (matches Inkitt). Fixed 120 height.
+    // CRITICAL: compact carousel tiles must be cover-only. Parent is 86x120.
+    // Using Column here causes RenderFlex overflow by ~52px.
     if (compact) {
       return GestureDetector(
         onTap: _openDetail,
