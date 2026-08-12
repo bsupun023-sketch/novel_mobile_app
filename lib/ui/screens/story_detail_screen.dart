@@ -116,8 +116,10 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               shrinkWrap: true,
               children: [
                 const ListTile(
-                  title: Text('Save to reading list',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(
+                    'Save to reading list',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.add),
@@ -144,7 +146,6 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         },
       );
       if (choice == null) return;
-
       if (choice['_create'] == true) {
         final nameCtrl = TextEditingController();
         final name = await showDialog<String>(
@@ -197,14 +198,12 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         );
         return;
       }
-
       final listId = (choice['id'] as num?)?.toInt() ?? 0;
       if (listId == 0) return;
       await widget.apiService.addReadingListItem(listId, _book.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Saved to ${choice['name'] ?? 'reading list'}')),
+        SnackBar(content: Text('Saved to ${choice['name'] ?? 'reading list'}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -220,10 +219,16 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
     }
   }
 
-  void _openChapter(Map<String, dynamic> chapter) {
+  void _openChapter(Map<String, dynamic> chapter, {int? index}) {
     final chapterTitle = chapter['title'] as String? ?? 'Untitled chapter';
-    final chapterNumber = chapter['chapter_number'] as int? ?? 1;
+    final chapterNumber = (chapter['chapter_number'] as num?)?.toInt() ?? 1;
     final chapterContent = chapter['content'] as String? ?? '';
+    final idx = index ??
+        _chapters.indexWhere(
+          (c) =>
+              ((c['chapter_number'] as num?)?.toInt() == chapterNumber &&
+                  (c['title'] as String?) == chapterTitle),
+        );
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChapterReaderScreen(
@@ -237,6 +242,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           bookId: _book.id,
           tags: _tags,
           authorUserId: _book.authorUserId,
+          chapters: _chapters,
+          initialChapterIndex: idx < 0 ? 0 : idx,
         ),
       ),
     );
@@ -249,7 +256,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
       );
       return;
     }
-    _openChapter(_chapters.first);
+    _openChapter(_chapters.first, index: 0);
   }
 
   Future<void> _openTag(String tag) async {
@@ -262,6 +269,26 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           books: books,
           apiService: widget.apiService,
         ),
+      ),
+    );
+  }
+
+  Widget _statCell(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+        ],
       ),
     );
   }
@@ -326,8 +353,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child:
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             ),
           SliverToBoxAdapter(
@@ -371,24 +397,11 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text('by ${_book.author}',
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(color: Colors.black54)),
-                        const SizedBox(height: 10),
-                        if (_book.rating > 0)
-                          Row(children: [
-                            const Icon(Icons.star, size: 16, color: Colors.amber),
-                            const SizedBox(width: 4),
-                            Text(_book.rating.toStringAsFixed(1),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
-                          ]),
-                        if (_book.statusText.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(_book.statusText,
-                              style: TextStyle(
-                                  color: Colors.grey.shade600, fontSize: 12)),
-                        ],
+                        Text(
+                          'by ${_book.author}',
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: Colors.black54),
+                        ),
                         const SizedBox(height: 12),
                         if (_book.authorUserId != null)
                           SizedBox(
@@ -400,11 +413,11 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                                 side: BorderSide(
                                   color: _isFollowing
                                       ? Colors.grey.shade400
-                                      : const Color(0xFFE85D4C),
+                                      : const Color(0xFF00C853),
                                 ),
                                 foregroundColor: _isFollowing
                                     ? Colors.black54
-                                    : const Color(0xFFE85D4C),
+                                    : const Color(0xFF00C853),
                               ),
                               child:
                                   Text(_isFollowing ? 'Following' : 'Follow'),
@@ -417,15 +430,39 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               ),
             ),
           ),
+          if (!_loadingChapters)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _statCell('Chapters', '${_chapters.length}'),
+                    _statCell(
+                      'Last Updated',
+                      _book.statusText.isNotEmpty ? _book.statusText : '—',
+                    ),
+                    _statCell(
+                      'Reviews',
+                      _book.rating > 0
+                          ? '★ ${_book.rating.toStringAsFixed(1)}'
+                          : '${_reviews.length}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Summary',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                    'Summary',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     _book.description.isEmpty
@@ -444,9 +481,11 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Tags',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      'Tags',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -456,9 +495,9 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                             (t) => ActionChip(
                               label: Text(t.startsWith('#') ? t : '#$t'),
                               onPressed: () => _openTag(t),
-                              backgroundColor: const Color(0xFFFFF0EE),
+                              backgroundColor: const Color(0xFFE8F5E9),
                               labelStyle: const TextStyle(
-                                color: Color(0xFFE85D4C),
+                                color: Color(0xFF00C853),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -474,9 +513,11 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: Row(
                 children: [
-                  Text('Reviews',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                    'Reviews',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
                   const Spacer(),
                   TextButton(
                     onPressed: () async {
@@ -518,9 +559,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 (context, index) {
                   final r = _reviews[index];
                   final rating = (r['rating'] as num?)?.toInt() ?? 0;
-                  final comment = r['comment'] as String? ??
-                      r['body'] as String? ??
-                      '';
+                  final comment =
+                      r['comment'] as String? ?? r['body'] as String? ?? '';
                   final author = r['display_name'] as String? ??
                       r['author'] as String? ??
                       'Reader';
@@ -549,9 +589,11 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-              child: Text('Chapters',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              child: Text(
+                'Chapters',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
           if (_loadingChapters)
@@ -576,17 +618,20 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   final title =
                       chapter['title'] as String? ?? 'Untitled chapter';
                   final number =
-                      chapter['chapter_number'] as int? ?? index + 1;
+                      (chapter['chapter_number'] as num?)?.toInt() ??
+                          index + 1;
                   return ListTile(
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 16),
-                    title: Text('Chapter $number',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 14)),
+                    title: Text(
+                      'Chapter $number',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
                     subtitle: Text(title,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _openChapter(chapter),
+                    onTap: () => _openChapter(chapter, index: index),
                   );
                 },
                 childCount: _chapters.length,
@@ -604,14 +649,15 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
             child: ElevatedButton(
               onPressed: _readNow,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE85D4C),
+                backgroundColor: const Color(0xFF00C853),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('Read Now',
-                  style:
-                      TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              child: const Text(
+                'Read Now',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
             ),
           ),
         ),
@@ -761,7 +807,7 @@ class _WriteReviewScreenState extends State<_WriteReviewScreen> {
               child: ElevatedButton(
                 onPressed: _saving ? null : _submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE85D4C),
+                  backgroundColor: const Color(0xFF00C853),
                   foregroundColor: Colors.white,
                 ),
                 child: _saving
