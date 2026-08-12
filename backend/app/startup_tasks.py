@@ -77,7 +77,6 @@ def _seed_tags(connection) -> int:
 
 
 def _apply_runtime_patches() -> None:
-    """Patch main module helpers for MySQL safety without full file rewrite."""
     try:
         from . import main as main_mod
         from . import database as db_mod
@@ -139,15 +138,12 @@ def run_startup_tasks() -> dict[str, Any]:
     # Ensure MySQL is reachable when configured; otherwise fall back to SQLite.
     try:
         from . import database as db_mod
+        from . import db_runtime
 
-        if not db_mod.USE_SQLITE:
-            err = db_mod._mysql_probe()
-            if err is not None and db_mod.MYSQL_FALLBACK_SQLITE:
-                db_mod.activate_sqlite_fallback(str(err))
-                result["db_mode"] = "sqlite"
-                result["mysql_fallback_reason"] = str(err)
-            else:
-                result["db_mode"] = "sqlite" if db_mod.USE_SQLITE else "mysql"
+        probe_info = db_runtime.apply_mysql_fallback_if_needed(db_mod)
+        result["db_mode"] = probe_info.get("db_mode", result["db_mode"])
+        if probe_info.get("mysql_fallback_reason"):
+            result["mysql_fallback_reason"] = probe_info["mysql_fallback_reason"]
     except Exception as probe_exc:
         LOGGER.warning("DB probe skipped: %s", probe_exc)
 
@@ -161,7 +157,7 @@ def run_startup_tasks() -> dict[str, Any]:
         _apply_runtime_patches()
         result["patches_applied"] = True
     except Exception as exc:
-        LOGGER.exception("Patch step failed: %s", exp if False else exc)
+        LOGGER.exception("Patch step failed: %s", exc)
 
     try:
         conn = get_connection()
