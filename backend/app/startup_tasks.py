@@ -8,10 +8,10 @@ from .database import (
     get_connection,
     USE_SQLITE,
 )
+from . import mysql_compat
 
 LOGGER = logging.getLogger(__name__)
 
-# Admin-managed hashtags (authors may only attach these; max 3 per book)
 DEFAULT_TAGS = [
     "Romance",
     "Love",
@@ -47,7 +47,6 @@ def _query_count(connection, table: str) -> int:
 
 
 def _seed_tags(connection) -> int:
-    """Idempotently seed admin hashtags. Returns number of tags inserted."""
     cursor = connection.cursor()
     inserted = 0
     try:
@@ -74,15 +73,37 @@ def _seed_tags(connection) -> int:
     return inserted
 
 
+def _apply_runtime_patches() -> None:
+    """Patch main module helpers for MySQL safety without full file rewrite."""
+    try:
+        from . import main as main_mod
+
+        def _to_db_query(query: str) -> str:
+            return mysql_compat.to_db_query(query, USE_SQLITE)
+
+        main_mod._to_db_query = _to_db_query  # type: ignore[attr-defined]
+
+        def _set_story_tags(story_id: int, tag_names: list[str] | None) -> None:
+            mysql_compat.set_story_tags(
+                story_id,
+                tag_names,
+                fetch_all=main_mod.fetch_all,
+                execute_write=main_mod.execute_write,
+            )
+
+        main_mod._set_story_tags = _set_story_tags  # type: ignore[attr-defined]
+        LOGGER.info("Applied MySQL runtime patches (INSERT IGNORE + admin tags)")
+    except Exception as exc:
+        LOGGER.warning("Runtime patches not applied: %s", exc)
+
+
 def run_startup_tasks() -> dict[str, Any]:
-    """Run idempotent startup tasks: initialize DB schema, run migrations/seeds,
-    and return a small summary so callers (and logs) can verify seeds applied.
-    """
     result: dict[str, Any] = {
         "initialized": False,
         "migrations": {},
         "counts": {},
         "tags_seeded": 0,
+        "patches_applied": False,
     }
 
     initialized = initialize_database_if_needed()
@@ -90,6 +111,12 @@ def run_startup_tasks() -> dict[str, Any]:
 
     migration_report = run_startup_migrations()
     result["migrations"] = migration_report
+
+    try:
+        _apply_runtime_patches()
+        result["patches_applied"] = True
+    except Exception as exc:
+        LOGGER.exception("Patch step failed: %s", exc)
 
     try:
         conn = get_connection()
