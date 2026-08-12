@@ -50,7 +50,7 @@ def _query_count(connection, table: str) -> int:
 
 
 def _ensure_mysql_extra_tables(connection) -> int:
-    """Create tags / book_tags / reviews / follows if missing (MySQL)."""
+    """Create/alter missing MySQL tables and columns used by the API."""
     from . import database as db_mod
 
     if db_mod.USE_SQLITE:
@@ -89,7 +89,7 @@ def _ensure_mysql_extra_tables(connection) -> int:
                 book_id INT NOT NULL,
                 user_id INT NOT NULL,
                 rating TINYINT NOT NULL DEFAULT 5,
-                body TEXT NOT NULL,
+                comment TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_review_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
             )
@@ -107,6 +107,20 @@ def _ensure_mysql_extra_tables(connection) -> int:
             )
             """,
         ),
+        (
+            "reading_list_items",
+            """
+            CREATE TABLE IF NOT EXISTS reading_list_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                reading_list_id INT NOT NULL,
+                book_id INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_list_book (reading_list_id, book_id),
+                CONSTRAINT fk_rli_list FOREIGN KEY (reading_list_id) REFERENCES reading_lists(id) ON DELETE CASCADE,
+                CONSTRAINT fk_rli_book FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+            )
+            """,
+        ),
     ]
     try:
         for name, sql in statements:
@@ -115,6 +129,44 @@ def _ensure_mysql_extra_tables(connection) -> int:
                 cursor.execute(sql)
                 added += 1
                 LOGGER.info("Created missing table: %s", name)
+
+        column_patches = [
+            ("app_users", "cover_url", "ALTER TABLE app_users ADD COLUMN cover_url TEXT NULL"),
+            ("app_users", "bio", "ALTER TABLE app_users ADD COLUMN bio TEXT NULL"),
+            ("app_users", "followers_count", "ALTER TABLE app_users ADD COLUMN followers_count INT NOT NULL DEFAULT 0"),
+            ("books", "user_id", "ALTER TABLE books ADD COLUMN user_id INT NULL AFTER id"),
+            ("books", "primary_genre", "ALTER TABLE books ADD COLUMN primary_genre VARCHAR(80) NOT NULL DEFAULT ''"),
+            ("books", "secondary_genre", "ALTER TABLE books ADD COLUMN secondary_genre VARCHAR(80) NOT NULL DEFAULT ''"),
+            ("books", "is_completed", "ALTER TABLE books ADD COLUMN is_completed TINYINT(1) NOT NULL DEFAULT 0"),
+            ("reading_lists", "user_id", "ALTER TABLE reading_lists ADD COLUMN user_id INT NULL AFTER id"),
+            ("library_entries", "user_id", "ALTER TABLE library_entries ADD COLUMN user_id INT NULL AFTER id"),
+            ("book_reviews", "comment", "ALTER TABLE book_reviews ADD COLUMN comment TEXT NULL"),
+        ]
+        for table, column, alter_sql in column_patches:
+            try:
+                cursor.execute(f"SHOW COLUMNS FROM {table} LIKE '{column}'")
+                if cursor.fetchone() is None:
+                    cursor.execute(alter_sql)
+                    added += 1
+                    LOGGER.info("Added column %s.%s", table, column)
+            except Exception as col_exc:
+                LOGGER.warning("Column patch %s.%s skipped: %s", table, column, col_exc)
+
+        try:
+            cursor.execute("SHOW COLUMNS FROM book_reviews LIKE 'body'")
+            has_body = cursor.fetchone() is not None
+            cursor.execute("SHOW COLUMNS FROM book_reviews LIKE 'comment'")
+            has_comment = cursor.fetchone() is not None
+            if has_body and has_comment:
+                cursor.execute(
+                    "UPDATE book_reviews SET comment = body WHERE (comment IS NULL OR comment = '') AND body IS NOT NULL"
+                )
+            elif has_body and not has_comment:
+                cursor.execute("ALTER TABLE book_reviews CHANGE body comment TEXT NOT NULL")
+                added += 1
+        except Exception as rev_exc:
+            LOGGER.warning("book_reviews comment/body patch skipped: %s", rev_exc)
+
         connection.commit()
     except Exception as exc:
         LOGGER.warning("ensure_mysql_extra_tables failed: %s", exc)
@@ -250,6 +302,7 @@ def run_startup_tasks() -> dict[str, Any]:
             "write_screen",
             "tags",
             "books",
+            "reading_list_items",
         ):
             result["counts"][tbl] = _query_count(conn, tbl)
         conn.close()
