@@ -266,10 +266,10 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   ...List.generate(_chapters.length, (i) {
                     final ch = _chapters[i];
                     final title = ch['title'] as String? ?? 'Untitled';
-                    final num = (ch['chapter_number'] as num?)?.toInt() ?? i + 1;
+                    final chapterNum = (ch['chapter_number'] as num?)?.toInt() ?? i + 1;
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: Text('$num', style: TextStyle(color: Colors.grey.shade600)),
+                      leading: Text('$chapterNum', style: TextStyle(color: Colors.grey.shade600)),
                       title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _openChapter(ch, index: i),
