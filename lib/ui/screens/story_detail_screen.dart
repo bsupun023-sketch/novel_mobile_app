@@ -81,6 +81,27 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
     }
   }
 
+  void _openChapter(Map<String, dynamic> ch, {int index = 0}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChapterReaderScreen(
+          apiService: widget.apiService,
+          title: _book.title,
+          author: _book.author,
+          coverPath: _book.coverPath,
+          bookId: _book.id,
+          chapterNumber: (ch['chapter_number'] as num?)?.toInt() ?? 1,
+          chapterTitle: ch['title'] as String? ?? 'Chapter',
+          chapterContent: ch['content'] as String? ?? '',
+          tags: _tags,
+          authorUserId: _book.authorUserId,
+          chapters: _chapters,
+          initialChapterIndex: index,
+        ),
+      ),
+    );
+  }
+
   void _readNow() {
     if (_chapters.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,21 +109,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
       );
       return;
     }
-    final ch = _chapters.first;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChapterReaderScreen(
-          bookId: _book.id,
-          chapterNumber: (ch['chapter_number'] as num?)?.toInt() ?? 1,
-          chapterTitle: ch['title'] as String? ?? 'Chapter 1',
-          chapterContent: ch['content'] as String? ?? '',
-          apiService: widget.apiService,
-          bookTitle: _book.title,
-          chapters: _chapters,
-          initialIndex: 0,
-        ),
-      ),
-    );
+    _openChapter(_chapters.first, index: 0);
   }
 
   @override
@@ -117,10 +124,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         foregroundColor: Colors.black87,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: () {},
-          ),
+          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () {}),
           IconButton(
             icon: const Icon(Icons.more_vert),
             onPressed: () async {
@@ -173,10 +177,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                       child: Text(
                         _book.title,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
                       ),
                     ),
                   ],
@@ -194,11 +195,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _stat('Chapters', '${_chapters.length}'),
-                    _stat(
-                      'Story Status',
-                      _book.statusText.isNotEmpty ? _book.statusText : '—',
-                    ),
-                    _stat('Reviews', '${_likesCount > 0 ? "★" : ""}'),
+                    _stat('Story Status', _book.statusText.isNotEmpty ? _book.statusText : '—'),
+                    _stat('Reviews', _likesCount > 0 ? '★' : '0'),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -234,14 +232,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _tags
-                        .map(
-                          (t) => Chip(
-                            label: Text('#$t'),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        )
-                        .toList(),
+                    children: _tags.map((t) => Chip(label: Text('#$t'), visualDensity: VisualDensity.compact)).toList(),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -250,11 +241,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                     CircleAvatar(
                       radius: 22,
                       backgroundColor: Colors.grey.shade300,
-                      child: Text(
-                        _book.author.isNotEmpty
-                            ? _book.author[0].toUpperCase()
-                            : 'A',
-                      ),
+                      child: Text(_book.author.isNotEmpty ? _book.author[0].toUpperCase() : 'A'),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -271,10 +258,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Chapters',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
+                const Text('Chapters', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 8),
                 if (_chapters.isEmpty)
                   const Text('No chapters published yet.')
@@ -288,22 +272,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                       leading: Text('$num', style: TextStyle(color: Colors.grey.shade600)),
                       title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => ChapterReaderScreen(
-                              bookId: _book.id,
-                              chapterNumber: num,
-                              chapterTitle: title,
-                              chapterContent: ch['content'] as String? ?? '',
-                              apiService: widget.apiService,
-                              bookTitle: _book.title,
-                              chapters: _chapters,
-                              initialIndex: i,
-                            ),
-                          ),
-                        );
-                      },
+                      onTap: () => _openChapter(ch, index: i),
                     );
                   }),
               ],
@@ -320,14 +289,9 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 backgroundColor: const Color(0xFF00C853),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text(
-                'Read Now',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
+              child: const Text('Read Now', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             ),
           ),
         ),
