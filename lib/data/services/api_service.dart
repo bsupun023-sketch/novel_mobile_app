@@ -404,6 +404,16 @@ class ApiService {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Convenience: returns only the items array from a reading list detail.
+  Future<List<Map<String, dynamic>>> fetchReadingListItems(int listId) async {
+    final detail = await fetchReadingListDetail(listId);
+    final items = detail['items'];
+    if (items is List) {
+      return List<Map<String, dynamic>>.from(items);
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
   Future<void> addReadingListItem(int listId, int bookId) async {
     final response = await _post('/api/reading-lists/$listId/items', {'book_id': bookId}, timeout: const Duration(seconds: 8));
     _ensureSuccessResponse(response);
