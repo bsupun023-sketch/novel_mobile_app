@@ -59,6 +59,25 @@ class AuthService {
     final token = prefs.getString(_tokenKey);
     if (token != null && token.isNotEmpty) {
       _apiService.setAuthToken(token);
+      try {
+        final me = await _apiService.fetchMe();
+        if (me.isEmpty || me['id'] == null) {
+          _apiService.setAuthToken(null);
+          await prefs.remove(_tokenKey);
+        } else {
+          if (me['email'] != null) {
+            await prefs.setString(_emailKey, me['email'].toString());
+          }
+          if (me['display_name'] != null) {
+            await prefs.setString(_displayNameKey, me['display_name'].toString());
+          }
+          if (me['id'] is num) {
+            await prefs.setInt(_idKey, (me['id'] as num).toInt());
+          }
+        }
+      } catch (_) {
+        // Network failure: keep token for offline use.
+      }
     }
 
     if (method == 'google') {
@@ -80,15 +99,17 @@ class AuthService {
     final email = prefs.getString(_emailKey) ?? '';
     final displayName = prefs.getString(_displayNameKey) ?? email;
     final photoUrl = prefs.getString(_photoUrlKey);
-    if (email.isEmpty) {
+    if (email.isEmpty && method != 'guest') {
       return null;
     }
 
     return AuthSession(
       id: prefs.getInt(_idKey),
       method: method,
-      email: email,
-      displayName: displayName.isEmpty ? email : displayName,
+      email: email.isEmpty ? 'guest@novel.app' : email,
+      displayName: displayName.isEmpty
+          ? (method == 'guest' ? 'Guest' : email)
+          : displayName,
       photoUrl: photoUrl,
     );
   }
