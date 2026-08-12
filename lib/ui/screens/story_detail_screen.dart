@@ -4,8 +4,6 @@ import '../../data/models/app_bootstrap.dart';
 import '../../data/services/api_service.dart';
 import 'chapter_reader_screen.dart';
 
-/// Story detail page modeled after Inkitt: cover, summary, genres, tags,
-/// chapters, Follow, Read Now, and overflow menu for reading lists / reviews.
 class StoryDetailScreen extends StatefulWidget {
   const StoryDetailScreen({
     super.key,
@@ -27,6 +25,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
   bool _loadingChapters = true;
   List<Map<String, dynamic>> _chapters = const [];
   List<String> _tags = const [];
+  List<Map<String, dynamic>> _reviews = const [];
+  bool _loadingReviews = true;
   String? _error;
 
   @override
@@ -40,6 +40,7 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
   Future<void> _bootstrap() async {
     setState(() {
       _loadingChapters = true;
+      _loadingReviews = true;
       _error = null;
     });
     try {
@@ -61,10 +62,18 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         final following = await widget.apiService.fetchAuthorFollowing(aid);
         if (mounted) setState(() => _isFollowing = following);
       }
+      final reviews = await widget.apiService.fetchBookReviews(_book.id);
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _loadingReviews = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _loadingChapters = false;
+          _loadingReviews = false;
           _error = 'Unable to load story details.';
         });
       }
@@ -96,27 +105,31 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
 
   Future<void> _openReadingListPicker() async {
     try {
-      final lists = await widget.apiService.fetchReadingLists();
+      var lists = await widget.apiService.fetchReadingLists();
       if (!mounted) return;
       final choice = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
+        isScrollControlled: true,
         builder: (ctx) {
-          if (lists.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('No reading lists yet. Create one from Library.'),
-            );
-          }
           return SafeArea(
             child: ListView(
               shrinkWrap: true,
               children: [
                 const ListTile(
-                  title: Text(
-                    'Save to reading list',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
+                  title: Text('Save to reading list',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('Create new list'),
+                  onTap: () =>
+                      Navigator.pop(ctx, <String, dynamic>{'_create': true}),
+                ),
+                if (lists.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No lists yet — create one above.'),
+                  ),
                 ...lists.map((list) {
                   final name = list['name'] as String? ?? 'List';
                   return ListTile(
@@ -131,17 +144,78 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
         },
       );
       if (choice == null) return;
-      final listId = choice['id'] as int? ?? 0;
+
+      if (choice['_create'] == true) {
+        final nameCtrl = TextEditingController();
+        final name = await showDialog<String>(
+          context: context,
+          builder: (dCtx) => AlertDialog(
+            title: const Text('Create reading list'),
+            content: TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'List name'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dCtx),
+                  child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () => Navigator.pop(dCtx, nameCtrl.text.trim()),
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+        );
+        if (name == null || name.isEmpty) return;
+        final created = await widget.apiService.createReadingList({
+          'name': name,
+          'story_count': 0,
+          'cover_path': '',
+          'sort_order': lists.length + 1,
+        });
+        var newId = (created['id'] as num?)?.toInt() ?? 0;
+        if (newId == 0) {
+          lists = await widget.apiService.fetchReadingLists();
+          for (final l in lists) {
+            if ((l['name'] as String?) == name) {
+              newId = (l['id'] as num?)?.toInt() ?? 0;
+              break;
+            }
+          }
+        }
+        if (newId != 0) {
+          await widget.apiService.addReadingListItem(newId, _book.id);
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newId != 0
+                ? 'Created "$name" and saved this story'
+                : 'Created "$name". Open Library to confirm.'),
+          ),
+        );
+        return;
+      }
+
+      final listId = (choice['id'] as num?)?.toInt() ?? 0;
       if (listId == 0) return;
       await widget.apiService.addReadingListItem(listId, _book.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved to ${choice['name'] ?? 'reading list'}')),
+        SnackBar(
+            content: Text('Saved to ${choice['name'] ?? 'reading list'}')),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save to reading list')),
+        SnackBar(
+          content: Text(
+            e.toString().contains('401') || e.toString().contains('403')
+                ? 'Please sign in to use reading lists'
+                : 'Could not save to reading list',
+          ),
+        ),
       );
     }
   }
@@ -222,8 +296,10 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                     context: context,
                     position: const RelativeRect.fromLTRB(1000, 80, 16, 0),
                     items: const [
-                      PopupMenuItem(value: 'list', child: Text('Save to reading list')),
-                      PopupMenuItem(value: 'review', child: Text('Write a review')),
+                      PopupMenuItem(
+                          value: 'list', child: Text('Save to reading list')),
+                      PopupMenuItem(
+                          value: 'review', child: Text('Write a review')),
                     ],
                   );
                   if (action == 'list') {
@@ -238,6 +314,9 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                         ),
                       ),
                     );
+                    final reviews =
+                        await widget.apiService.fetchBookReviews(_book.id);
+                    if (mounted) setState(() => _reviews = reviews);
                   }
                 },
               ),
@@ -247,7 +326,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child:
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             ),
           SliverToBoxAdapter(
@@ -291,35 +371,31 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          'by ${_book.author}',
-                          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                        ),
+                        Text('by ${_book.author}',
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black54)),
                         const SizedBox(height: 10),
                         if (_book.rating > 0)
-                          Row(
-                            children: [
-                              const Icon(Icons.star, size: 16, color: Colors.amber),
-                              const SizedBox(width: 4),
-                              Text(
-                                _book.rating.toStringAsFixed(1),
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
+                          Row(children: [
+                            const Icon(Icons.star, size: 16, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(_book.rating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                          ]),
                         if (_book.statusText.isNotEmpty) ...[
                           const SizedBox(height: 6),
-                          Text(
-                            _book.statusText,
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                          ),
+                          Text(_book.statusText,
+                              style: TextStyle(
+                                  color: Colors.grey.shade600, fontSize: 12)),
                         ],
                         const SizedBox(height: 12),
                         if (_book.authorUserId != null)
                           SizedBox(
                             height: 36,
                             child: OutlinedButton(
-                              onPressed: _loadingFollow ? null : _toggleFollow,
+                              onPressed:
+                                  _loadingFollow ? null : _toggleFollow,
                               style: OutlinedButton.styleFrom(
                                 side: BorderSide(
                                   color: _isFollowing
@@ -330,7 +406,8 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                                     ? Colors.black54
                                     : const Color(0xFFE85D4C),
                               ),
-                              child: Text(_isFollowing ? 'Following' : 'Follow'),
+                              child:
+                                  Text(_isFollowing ? 'Following' : 'Follow'),
                             ),
                           ),
                       ],
@@ -346,51 +423,20 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Summary',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                  ),
+                  Text('Summary',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
                   Text(
-                    _book.description.isEmpty ? 'No summary available.' : _book.description,
+                    _book.description.isEmpty
+                        ? 'No summary available.'
+                        : _book.description,
                     style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
                   ),
                 ],
               ),
             ),
           ),
-          if (_book.genre.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Genres',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _book.genre
-                          .split(RegExp(r'[,/|]'))
-                          .map((g) => g.trim())
-                          .where((g) => g.isNotEmpty)
-                          .map(
-                            (g) => Chip(
-                              label: Text(g),
-                              visualDensity: VisualDensity.compact,
-                              backgroundColor: Colors.grey.shade100,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           if (_tags.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
@@ -398,10 +444,9 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Tags',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
+                    Text('Tags',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -427,10 +472,86 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-              child: Text(
-                'Chapters',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              child: Row(
+                children: [
+                  Text('Reviews',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _WriteReviewScreen(
+                            bookId: _book.id,
+                            apiService: widget.apiService,
+                          ),
+                        ),
+                      );
+                      final reviews =
+                          await widget.apiService.fetchBookReviews(_book.id);
+                      if (mounted) setState(() => _reviews = reviews);
+                    },
+                    child: const Text('Write'),
+                  ),
+                ],
               ),
+            ),
+          ),
+          if (_loadingReviews)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            )
+          else if (_reviews.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('No reviews yet. Be the first to review.'),
+              ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final r = _reviews[index];
+                  final rating = (r['rating'] as num?)?.toInt() ?? 0;
+                  final comment = r['comment'] as String? ??
+                      r['body'] as String? ??
+                      '';
+                  final author = r['display_name'] as String? ??
+                      r['author'] as String? ??
+                      'Reader';
+                  return ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16),
+                    title: Row(
+                      children: [
+                        Text(author,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        ...List.generate(
+                          rating.clamp(0, 5),
+                          (_) => const Icon(Icons.star,
+                              size: 14, color: Colors.amber),
+                        ),
+                      ],
+                    ),
+                    subtitle: comment.isEmpty ? null : Text(comment),
+                  );
+                },
+                childCount: _reviews.length,
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              child: Text('Chapters',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700)),
             ),
           ),
           if (_loadingChapters)
@@ -452,15 +573,18 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final chapter = _chapters[index];
-                  final title = chapter['title'] as String? ?? 'Untitled chapter';
-                  final number = chapter['chapter_number'] as int? ?? index + 1;
+                  final title =
+                      chapter['title'] as String? ?? 'Untitled chapter';
+                  final number =
+                      chapter['chapter_number'] as int? ?? index + 1;
                   return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    title: Text(
-                      'Chapter $number',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    subtitle: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16),
+                    title: Text('Chapter $number',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: Text(title,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _openChapter(chapter),
                   );
@@ -482,12 +606,12 @@ class _StoryDetailScreenState extends State<StoryDetailScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE85D4C),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text(
-                'Read Now',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
+              child: const Text('Read Now',
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             ),
           ),
         ),
@@ -530,7 +654,8 @@ class _TagBooksScreen extends StatelessWidget {
                           width: 40,
                           height: 56,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.broken_image),
                         ),
                   title: Text(title),
                   subtitle: Text(author),
