@@ -157,17 +157,18 @@ class BookDetailModel {
 
   factory BookDetailModel.fromMap(Map<String, dynamic> map) {
     return BookDetailModel(
-      id: map['id'] as int,
-      title: map['title'] as String,
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      title: map['title'] as String? ?? 'Untitled',
       author: map['author'] as String? ?? '',
-      description: map['description'] as String,
-      statusText: map['status_text'] as String,
-      rating: (map['rating'] as num).toDouble(),
-      genre: map['genre'] as String,
-      cta: map['cta'] as String? ?? 'Read now',
+      description: map['description'] as String? ?? '',
+      statusText: map['status_text'] as String? ?? '',
+      rating: (map['rating'] as num?)?.toDouble() ?? 0.0,
+      genre: map['genre'] as String? ?? '',
+      cta: map['cta'] as String? ?? map['cta_label'] as String? ?? 'Read now',
       coverPath: map['cover_path'] as String? ?? '',
       tags: List<String>.from(map['tags'] as List<dynamic>? ?? <dynamic>[]),
-      authorUserId: (map['author_user_id'] as num?)?.toInt(),
+      authorUserId: (map['author_user_id'] as num?)?.toInt() ??
+          (map['user_id'] as num?)?.toInt(),
     );
   }
 }
