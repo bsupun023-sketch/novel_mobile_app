@@ -92,6 +92,21 @@ def _apply_runtime_patches() -> None:
             )
 
         main_mod._set_story_tags = _set_story_tags  # type: ignore[attr-defined]
+
+        try:
+            from .tag_routes import register_extra_routes
+            serialize = getattr(main_mod, "_serialize_book", None)
+            register_extra_routes(
+                main_mod.app,
+                fetch_all=main_mod.fetch_all,
+                fetch_one=main_mod.fetch_one,
+                execute_write=main_mod.execute_write,
+                serialize_book=serialize,
+            )
+            LOGGER.info("Registered extra tag/book routes")
+        except Exception as route_exc:
+            LOGGER.warning("Extra routes not registered: %s", route_exc)
+
         LOGGER.info("Applied MySQL runtime patches (INSERT IGNORE + admin tags)")
     except Exception as exc:
         LOGGER.warning("Runtime patches not applied: %s", exc)
