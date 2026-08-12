@@ -142,8 +142,9 @@ class _RootShellState extends State<RootShell> {
 
     final pages = <Widget>[
       LibraryScreen(
-        entries: _bootstrap!.libraryEntries,
+        data: _bootstrap!,
         apiService: _apiService,
+        onOpenDiscover: () => setState(() => _selectedIndex = 1),
       ),
       DiscoverScreen(data: _bootstrap!, apiService: _apiService),
       WriteScreen(data: _bootstrap!, apiService: _apiService),
