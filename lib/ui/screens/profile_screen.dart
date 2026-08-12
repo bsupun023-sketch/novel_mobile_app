@@ -779,7 +779,7 @@ class _AboutTab extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: currentReads.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final e = currentReads[index];
                 return GestureDetector(
@@ -817,7 +817,7 @@ class _AboutTab extends StatelessWidget {
                                     apiService.resolveAssetUrl(e.book.coverPath),
                                     width: 90,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
+                                    errorBuilder: (context, error, stackTrace) =>
                                         const ColoredBox(color: Color(0xFFE4E4E4)),
                                   )
                                 : const ColoredBox(color: Color(0xFFE4E4E4)),
@@ -891,7 +891,7 @@ class _AboutTab extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: profile.readingLists.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
               itemBuilder: (context, index) => _ReadingListPreview(
                 list: profile.readingLists[index],
                 apiService: apiService,
@@ -1003,7 +1003,7 @@ class _ReadingListPreview extends StatelessWidget {
                       child: Image.network(
                         apiService.resolveAssetUrl(list.coverPath),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
+                        errorBuilder: (context, error, stackTrace) =>
                             const ColoredBox(color: Color(0xFFF5F5F5)),
                       ),
                     )
@@ -1068,7 +1068,7 @@ class _StoriesTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: stories.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 16),
+          separatorBuilder: (context, index) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
             final story = stories[index];
             final cover = story['cover_path']?.toString() ?? '';
@@ -1199,7 +1199,7 @@ class _StoriesTab extends StatelessWidget {
                           width: 64,
                           height: 64,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
+                          errorBuilder: (context, error, stackTrace) =>
                               const ColoredBox(color: Color(0xFFF5F5F5)),
                         )
                       : const SizedBox(
@@ -1209,10 +1209,13 @@ class _StoriesTab extends StatelessWidget {
                         ),
                 ),
                 title: Text(story['title'] as String? ?? 'Untitled story'),
-                subtitle: Text(story['author'] as String? ?? 'Unknown author'),
-                trailing: Text(
-                  story['status_text'] as String? ?? '',
-                  style: Theme.of(context).textTheme.bodySmall,
+                subtitle: Text(
+                  [
+                    story['author'] as String? ?? 'Unknown author',
+                    if ((story['status_text'] as String?)?.trim().isNotEmpty ==
+                        true)
+                      (story['status_text'] as String).trim(),
+                  ].join(' · '),
                 ),
               ),
             );
@@ -1263,7 +1266,7 @@ class _WallTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: messages.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final message = messages[index];
             return Container(
@@ -1342,7 +1345,7 @@ class _ActivityTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: notifications.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final notification = notifications[index];
             return Container(
@@ -1421,7 +1424,7 @@ class _ReviewsTab extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: reviews.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final r = reviews[index];
         final book = Map<String, dynamic>.from(
@@ -1456,7 +1459,7 @@ class _ReviewsTab extends StatelessWidget {
                 ? Image.network(
                     apiService.resolveAssetUrl(cover),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
+                    errorBuilder: (context, error, stackTrace) =>
                         const ColoredBox(color: Color(0xFFE4E4E4)),
                   )
                 : const ColoredBox(color: Color(0xFFE4E4E4)),
