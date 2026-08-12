@@ -1135,19 +1135,16 @@ class _StoriesTab extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 if (chapters.isEmpty)
-                                  const Text('No chapters yet')
-                                else
-                                  ...chapters.map((c) {
-                                    final n =
-                                        (c['chapter_number'] as num?)?.toInt() ??
-                                        0;
-                                    return ListTile(
-                                      title: Text(
-                                        (c['title'] ?? 'Chapter $n').toString(),
-                                      ),
-                                      onTap: () => Navigator.pop(ctx, c),
-                                    );
-                                  }),
+                                  const Text('No chapters yet'),
+                                for (final c in chapters)
+                                  ListTile(
+                                    title: Text(
+                                      (c['title'] ??
+                                              'Chapter ${(c['chapter_number'] as num?)?.toInt() ?? 0}')
+                                          .toString(),
+                                    ),
+                                    onTap: () => Navigator.pop(ctx, c),
+                                  ),
                                 FilledButton.icon(
                                   onPressed: () => Navigator.pop(ctx, 'new'),
                                   icon: const Icon(Icons.add),

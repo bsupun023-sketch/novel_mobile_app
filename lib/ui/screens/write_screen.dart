@@ -105,30 +105,28 @@ class _WriteScreenState extends State<WriteScreen>
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: Text('No chapters yet. Add the first one.'),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: chapters.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final c = chapters[i];
-                        final num = (c['chapter_number'] as num?)?.toInt() ?? (i + 1);
-                        final title = (c['title'] ?? 'Chapter $num').toString();
-                        final status = (c['submission_status'] ?? 'draft').toString();
-                        return ListTile(
-                          leading: CircleAvatar(
-                            radius: 16,
-                            child: Text('$num', style: const TextStyle(fontSize: 12)),
-                          ),
-                          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(status),
-                          trailing: const Icon(Icons.edit_outlined, size: 18),
-                          onTap: () => Navigator.pop(ctx, c),
-                        );
-                      },
+                  ),
+                for (final c in chapters)
+                  ListTile(
+                    leading: CircleAvatar(
+                      radius: 16,
+                      child: Text(
+                        '${(c['chapter_number'] as num?)?.toInt() ?? ''}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
+                    title: Text(
+                      (c['title'] ??
+                              'Chapter ${(c['chapter_number'] as num?)?.toInt() ?? ''}')
+                          .toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      (c['submission_status'] ?? 'draft').toString(),
+                    ),
+                    trailing: const Icon(Icons.edit_outlined, size: 18),
+                    onTap: () => Navigator.pop(ctx, c),
                   ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
@@ -158,7 +156,7 @@ class _WriteScreenState extends State<WriteScreen>
       );
     } else if (choice is Map<String, dynamic>) {
       final id = (choice['id'] as num?)?.toInt();
-      final num = (choice['chapter_number'] as num?)?.toInt();
+      final chapterNo = (choice['chapter_number'] as num?)?.toInt();
       final title = (choice['title'] ?? 'Chapter').toString();
       await Navigator.of(context).push<Map<String, dynamic>>(
         MaterialPageRoute<Map<String, dynamic>>(
@@ -166,7 +164,7 @@ class _WriteScreenState extends State<WriteScreen>
             apiService: widget.apiService,
             storyId: storyId,
             chapterId: id,
-            chapterNumber: num,
+            chapterNumber: chapterNo,
             chapterTitle: title,
           ),
         ),

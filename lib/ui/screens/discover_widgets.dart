@@ -550,7 +550,7 @@ class _StoryCardState extends State<_StoryCard> {
                     fit: BoxFit.cover,
                     width: widget.width,
                     height: 120,
-                    errorBuilder: (_, __, ___) => ColoredBox(
+                    errorBuilder: (context, error, stackTrace) => ColoredBox(
                       color: color.withValues(alpha: 0.15),
                       child: const Center(child: Icon(Icons.menu_book, size: 28)),
                     ),
@@ -591,7 +591,7 @@ class _StoryCardState extends State<_StoryCard> {
                     : Image.network(
                         coverUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (context, error, stackTrace) => Container(
                           color: color.withValues(alpha: 0.2),
                           child: const Center(child: Icon(Icons.menu_book)),
                         ),
@@ -814,7 +814,7 @@ class _GenrePillRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final label = items[index];
           return ActionChip(
@@ -962,7 +962,7 @@ class _GenreBooksScreen extends StatelessWidget {
           : ListView.separated(
               padding: const EdgeInsets.all(12),
               itemCount: books.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final item = books[index];
                 final cover = (item['cover_path'] ?? '').toString();
@@ -988,7 +988,7 @@ class _GenreBooksScreen extends StatelessWidget {
                         ? Image.network(
                             apiService.resolveAssetUrl(cover),
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
+                            errorBuilder: (context, error, stackTrace) =>
                                 const ColoredBox(color: Color(0xFFE4E4E4)),
                           )
                         : const ColoredBox(color: Color(0xFFE4E4E4)),
