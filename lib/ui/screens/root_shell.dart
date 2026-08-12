@@ -91,8 +91,8 @@ class _RootShellState extends State<RootShell> {
     final session = method == 'google'
         ? await _authService.signInWithGoogle()
         : method == 'email'
-        ? await _authService.signInWithEmail(email ?? '')
-        : await _authService.signInAsGuest();
+            ? await _authService.signInWithEmail(email ?? '')
+            : await _authService.signInAsGuest();
     if (!mounted) {
       return;
     }
@@ -109,8 +109,8 @@ class _RootShellState extends State<RootShell> {
           session.isGoogle
               ? 'Signed in as ${session.displayName}'
               : session.isGuest
-              ? 'Continuing as guest'
-              : 'Signed in with ${session.email}',
+                  ? 'Continuing as guest'
+                  : 'Signed in with ${session.email}',
         ),
       ),
     );
@@ -142,9 +142,8 @@ class _RootShellState extends State<RootShell> {
 
     final pages = <Widget>[
       LibraryScreen(
-        data: _bootstrap!,
+        entries: _bootstrap!.libraryEntries,
         apiService: _apiService,
-        onOpenDiscover: () => setState(() => _selectedIndex = 1),
       ),
       DiscoverScreen(data: _bootstrap!, apiService: _apiService),
       WriteScreen(data: _bootstrap!, apiService: _apiService),
