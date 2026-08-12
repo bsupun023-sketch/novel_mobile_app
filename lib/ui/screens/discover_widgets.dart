@@ -71,11 +71,15 @@ class _ExploreStoriesSection extends StatelessWidget {
   const _ExploreStoriesSection({
     required this.books,
     required this.apiService,
+    this.topics = const [],
+    this.onOpenExplore,
     this.onReadMore,
   });
 
   final List<BookCardModel> books;
   final ApiService apiService;
+  final List<dynamic> topics;
+  final VoidCallback? onOpenExplore;
   final void Function(BookCardModel book)? onReadMore;
 
   @override
@@ -85,15 +89,25 @@ class _ExploreStoriesSection extends StatelessWidget {
     }
     final book = books.first;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Explore Stories',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+          Row(
+            children: [
+              Text(
+                'Explore Stories',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const Spacer(),
+              if (onOpenExplore != null)
+                TextButton(
+                  onPressed: onOpenExplore,
+                  child: const Text('See all'),
                 ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
@@ -140,15 +154,6 @@ class _ExploreStoriesSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          _GenrePillRow(
-            genres: books
-                .map((b) => b.primaryGenre)
-                .where((g) => g.trim().isNotEmpty)
-                .toSet()
-                .take(8)
-                .toList(),
-          ),
         ],
       ),
     );
@@ -180,7 +185,7 @@ class _DynamicStoryRailState extends State<_DynamicStoryRail> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
           child: Text(
             widget.section.title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -192,7 +197,6 @@ class _DynamicStoryRailState extends State<_DynamicStoryRail> {
           height: 120,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: books.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
@@ -378,7 +382,7 @@ class _AuthorsStripState extends State<_AuthorsStrip> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
           child: Text(
             'New Authors on Inkitt',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -390,7 +394,6 @@ class _AuthorsStripState extends State<_AuthorsStrip> {
           height: 96,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: list.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
@@ -427,33 +430,73 @@ class _AuthorsStripState extends State<_AuthorsStrip> {
 }
 
 class _GenrePillRow extends StatelessWidget {
-  const _GenrePillRow({required this.genres});
+  const _GenrePillRow({
+    this.genres = const [],
+    this.topics = const [],
+    this.books = const [],
+    this.apiService,
+    this.onOpenExplore,
+  });
 
   final List<String> genres;
+  final List<dynamic> topics;
+  final List<BookCardModel> books;
+  final ApiService? apiService;
+  final VoidCallback? onOpenExplore;
 
   @override
   Widget build(BuildContext context) {
-    if (genres.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 36,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: genres.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(20),
+    final labels = <String>[];
+    if (genres.isNotEmpty) {
+      labels.addAll(genres);
+    } else if (topics.isNotEmpty) {
+      for (final t in topics) {
+        if (t is String && t.trim().isNotEmpty) {
+          labels.add(t);
+        } else if (t is Map && t['name'] != null) {
+          labels.add(t['name'].toString());
+        }
+      }
+    } else {
+      for (final b in books) {
+        if (b.primaryGenre.trim().isNotEmpty) labels.add(b.primaryGenre);
+      }
+    }
+    final unique = labels.toSet().take(10).toList();
+    if (unique.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (onOpenExplore != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onOpenExplore,
+              child: const Text('Explore genres'),
             ),
-            child: Text(
-              genres[index],
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          );
-        },
-      ),
+          ),
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: unique.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  unique[index],
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
