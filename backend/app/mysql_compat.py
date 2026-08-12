@@ -40,3 +40,26 @@ def set_story_tags(
             "INSERT OR IGNORE INTO book_tags (book_id, tag_id) VALUES (%s, %s)",
             (story_id, tag_id),
         )
+
+
+def patch_execute_write(main_mod, use_sqlite: bool) -> None:
+    """Wrap main.execute_write so lastrowid is recovered on MySQL/SQLite."""
+    original = main_mod.execute_write
+
+    def execute_write(query: str, params: tuple = ()):
+        last_id, affected = original(query, params)
+        if not last_id and str(query).strip().upper().startswith("INSERT"):
+            try:
+                rows = main_mod.fetch_all(
+                    "SELECT last_insert_rowid() AS id"
+                    if use_sqlite
+                    else "SELECT LAST_INSERT_ID() AS id"
+                )
+                if rows:
+                    row = rows[0]
+                    last_id = row["id"] if isinstance(row, dict) else row[0]
+            except Exception:
+                pass
+        return last_id, affected
+
+    main_mod.execute_write = execute_write  # type: ignore[attr-defined]

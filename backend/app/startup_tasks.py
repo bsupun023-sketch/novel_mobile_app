@@ -107,6 +107,12 @@ def _apply_runtime_patches() -> None:
         except Exception as route_exc:
             LOGGER.warning("Extra routes not registered: %s", route_exc)
 
+        try:
+            mysql_compat.patch_execute_write(main_mod, USE_SQLITE)
+            LOGGER.info("Patched execute_write for lastrowid recovery")
+        except Exception as ew_exc:
+            LOGGER.warning("execute_write patch skipped: %s", ew_exc)
+
         LOGGER.info("Applied MySQL runtime patches (INSERT IGNORE + admin tags)")
     except Exception as exc:
         LOGGER.warning("Runtime patches not applied: %s", exc)
